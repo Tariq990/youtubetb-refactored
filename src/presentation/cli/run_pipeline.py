@@ -343,7 +343,7 @@ def _discover_gemini_key(repo_root: Path) -> str | None:
 
 
 def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None = None) -> None:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[3]  # Fixed: go up to project root
     log_path = combined_log or (run_root / "preflight.log")
     _stdout = sys.stdout
     attempt = 0

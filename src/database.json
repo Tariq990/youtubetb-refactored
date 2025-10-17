@@ -7,6 +7,22 @@
       "run_folder": "2025-10-17_17-36-18_Zero-to-One",
       "status": "processing",
       "playlist": "Business & Finance"
+    },
+    {
+      "main_title": "The 48 Laws of Power",
+      "author_name": "Robert Greene",
+      "date_added": "2025-10-17T21:23:01",
+      "run_folder": "2025-10-17_21-22-48_The-48-Laws-of-Power",
+      "status": "processing",
+      "playlist": "Philosophy & Thought"
+    },
+    {
+      "main_title": "Atomic Habits",
+      "author_name": "James Clear",
+      "date_added": "2025-10-17T21:55:40",
+      "run_folder": "2025-10-17_21-55-26_Atomic-Habits",
+      "status": "processing",
+      "playlist": "Self-Development"
     }
   ]
 }
