@@ -1,0 +1,24 @@
+# Core runtime
+requests
+beautifulsoup4
+arabic-reshaper
+python-bidi
+rich
+typer
+python-dotenv
+google-api-python-client
+google-auth
+google-auth-oauthlib
+
+# Media / download
+yt-dlp
+youtube-transcript-api
+
+# AI / LLM
+google-generativeai
+absl-py
+
+# Browser automation (install browsers separately with: python -m playwright install)
+playwright
+Pillow
+

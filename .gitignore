@@ -1,0 +1,55 @@
+# Secrets and API Keys
+secrets/
+.env
+*.env
+api_key.txt
+client_secret.json
+token.json
+cookies.txt
+
+# Large media files
+runs/
+*.mp3
+*.mp4
+*.wav
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Test files
+test_*.py
+covers/
+covers_*/
+analyze_process.py
+run_comparison.py
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+database.json
+src/database.json
+
+# Logs
+*.log
+logs/
