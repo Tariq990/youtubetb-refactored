@@ -397,22 +397,24 @@ def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: in
 
     # Base size selection by word count (primary factor)
     if word_count <= 2:
-        size = 200
+        size = 220
     elif word_count == 3:
         # Fine-tune based on average word length
         if avg_word_len > 7:
-            size = 95  # Long words - much smaller to fit completely
+            size = 110  # Long words - much smaller to fit completely
         elif avg_word_len > 5:
-            size = 120  # Medium-long words
+            size = 140  # Medium-long words
         else:
-            size = 155  # Short words can be larger
+            size = 175  # Short words can be larger
     elif word_count == 4:
-        size = 120
+        size = 145
     elif word_count == 5:
-        size = 120
+        size = 135
+    elif word_count == 6:
+        size = 125
     else:
-        # 6+ words: scale down progressively
-        size = max(100, 200 - (word_count - 2) * 5)
+        # 7+ words: scale down more aggressively
+        size = max(95, 160 - (word_count - 6) * 8)
 
     # Additional adjustment for very long total text
     if char_count > 50:
@@ -810,12 +812,12 @@ def generate_thumbnail(
     # Layout: left cover box, right text with balanced spacing
     left_pad = 80  # Increased to shift design right (was 60px)
     right_pad = 40  # Decreased to shift design right (was 60px)
-    top_pad = 70
-    bottom_pad = 70
+    top_pad = 100   # Smaller cover: 520px height
+    bottom_pad = 100  # Smaller cover: 520px height
     gutter = 60  # Equal to side padding for perfect symmetry (increased from 50px)
 
-    cover_box_w = 380  # Reduced from 420 to improve golden ratio (380:750 ≈ 0.507:1, closer to 1/φ)
-    cover_box_h = H - top_pad - bottom_pad
+    cover_box_w = 340  # Slightly wider: 340px width (less cropping)
+    cover_box_h = H - top_pad - bottom_pad  # 720 - 100 - 100 = 520px
     cover_box = (left_pad, top_pad, left_pad + cover_box_w, top_pad + cover_box_h)
 
     # Text area starts to the right of the cover box
@@ -829,20 +831,28 @@ def generate_thumbnail(
     text_padding_right = gutter  # Space from text end to screen edge
     # (Removed semi-transparent panel to keep clean design)
 
-    # Paste cover (fit inside cover_box) with subtle shadow
+    # Paste cover (FILL mode: stretch to fill entire box, crop if needed)
     if cover_path:
         try:
             cover = Image.open(cover_path).convert("RGB")
-            # Fit keeping aspect
+            # FILL: use MAX ratio to fill box completely, then crop overflow
             cb_w = cover_box_w
             cb_h = cover_box_h
-            ratio = min(cb_w / cover.width, cb_h / cover.height)
+            ratio = max(cb_w / cover.width, cb_h / cover.height)  # MAX fills the box
             nw, nh = int(cover.width * ratio), int(cover.height * ratio)
             RESAMPLING = getattr(Image, "Resampling", None)
             lanczos = getattr(RESAMPLING, "LANCZOS", None) if RESAMPLING else getattr(Image, "LANCZOS", 1)
             cover = cover.resize((nw, nh), lanczos)
-            cx = cover_box[0] + (cb_w - nw) // 2
-            cy = cover_box[1] + (cb_h - nh) // 2
+            
+            # Crop to exact box size if oversized
+            if nw > cb_w or nh > cb_h:
+                left = (nw - cb_w) // 2
+                top = (nh - cb_h) // 2
+                cover = cover.crop((left, top, left + cb_w, top + cb_h))
+                nw, nh = cb_w, cb_h
+            
+            cx = cover_box[0]
+            cy = cover_box[1]
             # Shadow
             shadow = Image.new("RGBA", (nw + 30, nh + 30), (0, 0, 0, 0))
             sd = ImageDraw.Draw(shadow)
@@ -940,7 +950,7 @@ def generate_thumbnail(
 
     # Text area starts after: left_pad + cover_box_w + gutter
     text_area_x = left_pad + cover_box_w + gutter
-    text_area_y = top_pad + 24
+    text_area_y = top_pad  # Perfect alignment with cover zone top
     text_area_w = available_for_text
 
     # Load fonts (bigger main title size and smaller subtitle size)
@@ -1070,11 +1080,13 @@ def generate_thumbnail(
     subtitle_heights = [_text_height(subtitle_font, line, fallback=56) for line in subtitle_lines] if subtitle_lines else []
     total_subtitle_height = sum(subtitle_heights) + (len(subtitle_heights) - 1) * subtitle_line_gap if subtitle_heights else 0
 
-    panel_height = H - top_pad - bottom_pad
+    # Center the text block inside the actual text area (text_area_y..text_area_y+text_area_h)
+    text_area_h = H - bottom_pad - text_area_y
     # No player icons - clean professional design
     total_block_height = total_title_height + (sub_gap_before if subtitle else 0) + total_subtitle_height
-    # Start y so the whole block is vertically centered in the panel
-    y = int(top_pad + max(0, (panel_height - total_block_height) / 2))
+    # Start y so the whole block is vertically centered in the TEXT AREA
+    vertical_offset = -40  # Move text UP by 40px for better visual balance
+    y = int(text_area_y + max(0, (text_area_h - total_block_height) / 2) + vertical_offset)
 
     # === AUTOMATIC TEXT COLOR ADJUSTMENT ===
     if debug:
@@ -1290,7 +1302,7 @@ if __name__ == "__main__":
     p.add_argument("--gap", dest="subtitle_gap", type=int, default=20, help="Vertical gap in pixels between title block and subtitle (default: 20)")
     p.add_argument("--title-line-gap", dest="title_line_gap", type=int, default=40, help="Vertical gap between lines of the main title (default: 40)")
     p.add_argument("--title-size", dest="title_font_size", type=int, default=250, help="Main title font size in pixels (default: 250)")
-    p.add_argument("--auto-title-size", dest="dynamic_title_size", action="store_true", default=False, help="Dynamically size title based on word count and text length. Sizes range 100-220px. Use --no-auto-title-size to disable.")
+    p.add_argument("--auto-title-size", dest="dynamic_title_size", action="store_true", default=True, help="Dynamically size title based on word count and text length. Sizes range 100-220px. Use --no-auto-title-size to disable.")
     p.add_argument("--no-auto-title-size", dest="dynamic_title_size", action="store_false")
     p.add_argument("--sub-size", dest="subtitle_font_size", type=int, default=80, help="Subtitle font size in pixels (default: 80)")
     p.add_argument("--icons-size", dest="icons_size", type=int, default=28, help="Player icons size (height/width) in pixels (default: 28)")

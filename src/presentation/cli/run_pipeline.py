@@ -343,7 +343,7 @@ def _discover_gemini_key(repo_root: Path) -> str | None:
 
 
 def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None = None) -> None:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[3]  # Fixed: go up to project root
     log_path = combined_log or (run_root / "preflight.log")
     _stdout = sys.stdout
     attempt = 0
@@ -459,6 +459,21 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                 except Exception as e:
                     print("Gemini API key test failed:", e)
                     ok = False
+
+            # Thumbnail font check (warning only, not critical)
+            try:
+                from src.infrastructure.adapters.thumbnail import _bebas_neue_candidates
+                font_cands = _bebas_neue_candidates("bold")
+                if font_cands:
+                    print(f"✓ Thumbnail font found: {font_cands[0].name}")
+                else:
+                    print("⚠️  Thumbnail font 'Bebas Neue' not found in assets/fonts/ or system")
+                    print("   Thumbnail generation (Stage 9) will fail and use bookcover.jpg fallback")
+                    print("   Download: https://github.com/google/fonts/raw/main/ofl/bebasneue/BebasNeue-Regular.ttf")
+                    print("   Save to: assets/fonts/BebasNeue-Regular.ttf")
+                    # Don't fail preflight - thumbnail is non-critical
+            except Exception as e:
+                print(f"⚠️  Thumbnail font check skipped: {e}")
 
         sys.stdout = _stdout
         if ok:

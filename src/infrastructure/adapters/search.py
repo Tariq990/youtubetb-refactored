@@ -191,7 +191,7 @@ def main(query: str | None = None, output_dir: os.PathLike | None = None):
 
             # Print each video for analysis
             minutes = total_seconds // 60
-            if total_seconds < 900 or total_seconds > 7200:
+            if total_seconds < 900 or total_seconds > 5400:  # 15 min - 90 min (1.5 hours)
                 print(f"[X] Excluded: {title[:50]}... ({minutes} min)")
                 excluded_count += 1
                 continue

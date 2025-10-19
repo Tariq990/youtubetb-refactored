@@ -518,10 +518,11 @@ def _generate_tags(book_title: str, author_name: Optional[str]) -> list[str]:
 def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompts: dict) -> list[str]:
     """
     Generate AI-powered topic tags using Gemini.
-    Returns 10 content-related tags without mentioning book/author names.
+    Returns 20 content-related tags without mentioning book/author names.
+    Upload stage will trim to fit 500 char limit automatically.
     """
     tpl = prompts.get("tags_template") or (
-        "Give me 10 relevant tags for this book that reflect its content and topic.\n\n"
+        "Give me 20 relevant tags for this book that reflect its content and topic.\n\n"
         "CRITICAL RULES:\n"
         "- Do NOT mention the book title: {book_name}\n"
         "- Do NOT mention the author name: {author_name}\n"
@@ -561,7 +562,7 @@ def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompt
                 if t and not t[0].isdigit() and len(t.split()) <= 3:
                     cleaned_tags.append(t)
 
-            return cleaned_tags[:10]  # Max 10 tags
+            return cleaned_tags[:20]  # Max 20 tags (was 10)
     except Exception as e:
         print(f"[AI Tags] Error: {e}")
 
@@ -725,22 +726,21 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
         updated_titles["TAGS"] = tags
         changed = True
 
-    # Add playlist name if not exists
-    # Priority: 1) Already in titles.json, 2) From database, 3) Default "Book Summaries"
+    # Add playlist name if not exists - Use Gemini classification
     if "playlist" not in updated_titles:
-        # Try to get from database
         try:
-            from src.pipeline.database import get_book_info
-            db_entry = get_book_info(book_name, author)
-            if db_entry and db_entry.get("playlist"):
-                updated_titles["playlist"] = db_entry["playlist"]
-                changed = True
-            else:
-                updated_titles["playlist"] = "Book Summaries"
-                changed = True
-        except Exception:
-            # Fallback if database not available
-            updated_titles["playlist"] = "Book Summaries"
+            from src.infrastructure.adapters.process import _get_book_playlist
+            
+            # Use model and prompts from outer scope (already loaded)
+            # Get classification from Gemini
+            playlist = _get_book_playlist(model, book_name, author, prompts)
+            updated_titles["playlist"] = playlist
+            changed = True
+            print(f"✅ Playlist classified by Gemini: {playlist}")
+        except Exception as e:
+            print(f"❌ Failed to classify playlist: {e}")
+            # Use Self-Development as default only if classification fails
+            updated_titles["playlist"] = "Self-Development"
             changed = True
 
     # Save thumbnail elements with correct keys for thumbnail.py
