@@ -1,8 +1,9 @@
-git clone https://github.com/Tariq990/youtubetb-refactored.git
-cd youtubetb-refactored
-pip install -r requirements.txt
-python -m playwright install chromium
-apt-get update -qq
-apt-get install -y ffmpeg
-python scripts/decrypt_secrets.py
-python main.py
+Step 1: Clone repository
+!git clone https://github.com/Tariq990/youtubetb-refactored.git
+%cd youtubetb-refactored
+
+Step 2: Run automated setup (installs everything + decrypts secrets)
+!python setup_colab.py
+
+Step 3: Run the pipeline
+!python main.py
