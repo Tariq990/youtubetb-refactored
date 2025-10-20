@@ -1,0 +1,8 @@
+git clone https://github.com/Tariq990/youtubetb-refactored.git
+cd youtubetb-refactored
+pip install -r requirements.txt
+python -m playwright install chromium
+apt-get update -qq
+apt-get install -y ffmpeg
+python scripts/decrypt_secrets.py
+python main.py
