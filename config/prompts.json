@@ -14,6 +14,21 @@
     "Arabic Text:",
     "{text}"
   ],
+  "clean_english_template": [
+    "Your task is to clean and prepare a raw English transcript from YouTube for processing.",
+    "",
+    "CRITICAL RULES FOR CLEANING:",
+    "1. Remove ALL intro/outro content (channel promotions, subscribe requests, sponsor mentions, credits).",
+    "2. Start directly with the book's main content.",
+    "3. Fix obvious auto-transcription errors and typos.",
+    "4. Remove repeated sentences or filler phrases.",
+    "5. Keep the tone natural and conversational.",
+    "6. Do NOT translate, summarize, or add new content.",
+    "7. Output ONLY the core book content in English.",
+    "",
+    "English Transcript:",
+    "{text}"
+  ],
   "translate_template": [
     "Translate the following cleaned Arabic text into fluent, natural English for a YouTube narration.",
     "",

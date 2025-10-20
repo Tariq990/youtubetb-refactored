@@ -75,8 +75,37 @@ def main(query: str | None = None, output_dir: os.PathLike | None = None):
         except Exception as _e:
             safe_print(f"Failed to save book name to input_name.txt in output_dir: {_e}")
 
+    # Detect language and construct appropriate query
+    try:
+        import sys
+        from pathlib import Path as _Path
+        sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+        from src.shared.utils.language_detector import detect_language
+        detected_lang = detect_language(book_name)
+    except Exception:
+        # Fallback: assume Arabic if detection fails
+        detected_lang = "ar"
+    
+    print(f">>> Detected language: {detected_lang}")
+    
     BASE_URL = "https://www.googleapis.com/youtube/v3/search"
-    query_full = f"\u0645\u0644\u062e\u0635 \u0643\u062a\u0627\u0628 {book_name}"  # "ملخص كتاب "
+    
+    # Construct query based on language
+    if detected_lang == "ar":
+        query_full = f"\u0645\u0644\u062e\u0635 \u0643\u062a\u0627\u0628 {book_name}"  # "ملخص كتاب "
+    else:
+        query_full = f"{book_name} book summary"
+    
+    print(f">>> Search query: {query_full}")
+    
+    # Save detected language to file for downstream stages
+    if output_dir is not None:
+        try:
+            lang_file = os.path.join(output_dir, "detected_language.txt")
+            with open(lang_file, "w", encoding="utf-8") as _lf:
+                _lf.write(detected_lang)
+        except Exception as _e:
+            safe_print(f"Warning: Could not save detected language: {_e}")
 
     # Phase 1: Search by relevance (popular videos)
     print(">>> Phase 1: Searching by relevance (popular videos)...")

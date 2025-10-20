@@ -33,6 +33,28 @@ def _load_prompts(config_dir: Path) -> dict:
 absl.logging.set_verbosity(absl.logging.ERROR)
 
 
+def _load_detected_language(run_dir: Path) -> str:
+    """
+    Load detected language from search stage.
+    
+    Args:
+        run_dir: Run directory containing detected_language.txt
+        
+    Returns:
+        "ar" for Arabic (default), "en" for English
+    """
+    lang_file = Path(run_dir) / "detected_language.txt"
+    if lang_file.exists():
+        try:
+            lang = lang_file.read_text(encoding="utf-8").strip()
+            if lang in ("ar", "en"):
+                return lang
+        except Exception:
+            pass
+    # Default to Arabic for backward compatibility
+    return "ar"
+
+
 def _fmt(tpl, **values):
     """
     Replace {key} placeholders in template, leaving all
@@ -110,6 +132,18 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
 def _clean_source_text(model, text: str, prompts: dict) -> str:
     tpl = prompts.get("clean_template") or (
         "\nYour task is to clean a raw Arabic transcript for a YouTube script.\n\nCRITICAL RULES FOR CLEANING:\n1. Remove all introductory and credit-related text (production/company/publisher/CTA/etc.).\n2. Start directly with the book's main content or author's introduction.\n3. Keep tone simple and conversational.\n4. Output ONLY the core content in Arabic.\n5. Do not translate or summarize.\n\nArabic Text:\n{text}\n"
+    )
+    prompt = _fmt(tpl, text=text)
+    return _gen(model, prompt)
+
+
+def _clean_english_transcript(model, text: str, prompts: dict) -> str:
+    """
+    Clean English transcript (remove intro/outro, fix typos).
+    Used when source video is already in English.
+    """
+    tpl = prompts.get("clean_english_template") or (
+        "\nYour task is to clean a raw English transcript from YouTube.\n\nCRITICAL RULES:\n1. Remove ALL intro/outro (channel promotions, subscribe requests, credits).\n2. Start directly with the book's main content.\n3. Fix obvious auto-transcription errors and typos.\n4. Remove repeated sentences or filler.\n5. Do NOT translate, summarize, or add new content.\n6. Output ONLY the core book content in English.\n\nEnglish Transcript:\n{text}\n"
     )
     prompt = _fmt(tpl, text=text)
     return _gen(model, prompt)
@@ -525,17 +559,32 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
         return None
     prompts = _load_prompts(config_dir)
 
+    # Load detected language from search stage
+    run_dir = Path(transcript_path).parent
+    detected_lang = _load_detected_language(run_dir)
+    print(f"[Process] Detected language: {detected_lang}")
+
     text = Path(transcript_path).read_text(encoding="utf-8")
 
+    # Stage 1: Cleaning (language-specific)
     print("Cleaning transcript...")
-    cleaned = _clean_source_text(model, text, prompts)
+    if detected_lang == "ar":
+        cleaned = _clean_source_text(model, text, prompts)
+    else:
+        cleaned = _clean_english_transcript(model, text, prompts)
+    
     if not cleaned:
         return None
 
-    print("Translating...")
-    english = _translate_to_english(model, cleaned, prompts)
-    if not english:
-        return None
+    # Stage 2: Translation (skip for English!)
+    if detected_lang == "ar":
+        print("Translating to English...")
+        english = _translate_to_english(model, cleaned, prompts)
+        if not english:
+            return None
+    else:
+        print("⏭️  Skipping translation (source is already in English)")
+        english = cleaned  # Already clean English text
 
     # Optional third stage: YouTube Scriptify
     enable_scriptify = True

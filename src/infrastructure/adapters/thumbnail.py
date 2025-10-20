@@ -397,17 +397,17 @@ def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: in
 
     # Base size selection by word count (primary factor)
     if word_count <= 2:
-        size = 220
+        size = 230  # Increased for 2-word titles (fits better with auto-scaling)
     elif word_count == 3:
         # Fine-tune based on average word length
         if avg_word_len > 7:
-            size = 110  # Long words - much smaller to fit completely
+            size = 130  # Long words (was 115 → +15px)
         elif avg_word_len > 5:
-            size = 140  # Medium-long words
+            size = 170  # Medium-long words (was 150 → +20px)
         else:
-            size = 175  # Short words can be larger
+            size = 205  # Short words (was 185 → +20px)
     elif word_count == 4:
-        size = 145
+        size = 150
     elif word_count == 5:
         size = 135
     elif word_count == 6:
@@ -418,11 +418,11 @@ def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: in
 
     # Additional adjustment for very long total text
     if char_count > 50:
-        size = max(85, size - 5)
+        size = max(95, size - 5)
     elif char_count > 40:
-        size = max(90, size - 3)
+        size = max(100, size - 3)
 
-    return int(max(85, min(220, size)))
+    return int(max(90, min(230, size)))  # Range: 90-230 (balanced)
 
 
 def _wrap_text_balanced(text: str, font: Any, max_width: int, max_lines: int = 3) -> List[str]:
@@ -816,7 +816,7 @@ def generate_thumbnail(
     bottom_pad = 100  # Smaller cover: 520px height
     gutter = 60  # Equal to side padding for perfect symmetry (increased from 50px)
 
-    cover_box_w = 340  # Slightly wider: 340px width (less cropping)
+    cover_box_w = 370  # Wider cover: 370px width (less cropping) - was 340px
     cover_box_h = H - top_pad - bottom_pad  # 720 - 100 - 100 = 520px
     cover_box = (left_pad, top_pad, left_pad + cover_box_w, top_pad + cover_box_h)
 
@@ -987,16 +987,25 @@ def generate_thumbnail(
     render_title = str(title).upper()
 
     # Determine optimal number of lines for title
+    # FIXED: Use 3 lines for 3-5 word titles to accommodate larger font sizes
     word_count = _word_count(render_title)
     if word_count <= 2:
         target_lines = 1
-    elif word_count <= 4:
-        target_lines = 2
+    elif word_count <= 5:
+        target_lines = 3  # Use 3 lines for 3-5 word titles (better distribution)
     else:
-        target_lines = 3
+        target_lines = 3  # 6+ words also use 3 lines max
 
-    # Use balanced line breaking for all titles
-    title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=target_lines)
+    # Special handling for 5-word titles: split as 2+3
+    if word_count == 5:
+        words = render_title.split()
+        title_lines = [
+            " ".join(words[:2]),  # First 2 words
+            " ".join(words[2:])   # Last 3 words
+        ]
+    else:
+        # Use balanced line breaking for all other titles
+        title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=target_lines)
 
     # CRITICAL FIX: If any line is still too wide, iteratively reduce font size
     max_attempts = 15
@@ -1005,9 +1014,14 @@ def generate_thumbnail(
         if max_line_width <= text_area_w:
             break  # All lines fit!
         # Reduce font size by 2px for finer control (changed from 5px)
-        tsize = max(40, tsize - 2)
+        tsize = max(80, tsize - 2)  # INCREASED minimum from 40 to 80px
         title_font = _load_font(tsize, title_font_cands, strict=strict_fonts, role="title", debug=debug)
-        title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=target_lines)
+        # Re-apply the same splitting logic
+        if word_count == 5:
+            words = render_title.split()
+            title_lines = [" ".join(words[:2]), " ".join(words[2:])]
+        else:
+            title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=target_lines)
         if debug and attempt < max_attempts - 1:
             try:
                 print(f"[thumb] text too wide ({max_line_width}px > {text_area_w}px), reducing to {tsize}px")
