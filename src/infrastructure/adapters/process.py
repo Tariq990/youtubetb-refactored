@@ -240,21 +240,51 @@ def _get_book_cover_from_amazon(title: str, author: Optional[str]) -> Optional[s
         
         print(f"[Amazon] البحث عن: {query}")
         
-        # إعداد headers
+        # إعداد headers أقوى (تقليد متصفح حقيقي)
         headers = {
             'User-Agent': _get_random_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1',
         }
         
-        # تأخير عشوائي
-        time.sleep(random.uniform(1.5, 3.0))
-        
-        # إرسال الطلب
-        response = requests.get(search_url, headers=headers, timeout=15)
-        response.raise_for_status()
+        # محاولة مع retry (3 محاولات)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # تأخير عشوائي أطول بين المحاولات
+                if attempt > 0:
+                    delay = random.uniform(5.0, 10.0) * (attempt + 1)
+                    print(f"[Amazon] محاولة {attempt + 1}/{max_retries} بعد {delay:.1f} ثانية...")
+                    time.sleep(delay)
+                else:
+                    time.sleep(random.uniform(2.0, 4.0))
+                
+                # إرسال الطلب
+                response = requests.get(search_url, headers=headers, timeout=20)
+                response.raise_for_status()
+                break  # نجح، اخرج من loop
+                
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code in [503, 403]:
+                    if attempt < max_retries - 1:
+                        print(f"[Amazon] ⚠️ تم حظر الطلب ({e.response.status_code}), إعادة المحاولة...")
+                        continue
+                    else:
+                        print(f"[Amazon] ❌ تم حظر الطلب ({e.response.status_code}) بعد {max_retries} محاولات")
+                        return None
+                raise
+        else:
+            print("[Amazon] ❌ فشلت جميع المحاولات")
+            return None
         
         # تحليل HTML
         soup = BeautifulSoup(response.content, 'html.parser')

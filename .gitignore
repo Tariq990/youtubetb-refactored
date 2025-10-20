@@ -1,4 +1,4 @@
-# Secrets and API Keys
+# Secrets and API Keys (ORIGINAL FILES - KEEP LOCAL!)
 secrets/
 .env
 *.env
@@ -6,6 +6,10 @@ api_key.txt
 client_secret.json
 token.json
 cookies.txt
+
+# Encrypted secrets (SAFE TO COMMIT!)
+# secrets_encrypted/ is ALLOWED - it contains password-protected files
+# To decrypt: python scripts/decrypt_secrets.py
 
 # Large media files
 runs/

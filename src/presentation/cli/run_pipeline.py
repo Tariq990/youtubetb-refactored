@@ -167,6 +167,79 @@ def _is_stage_completed(run_dir: Path, stage_name: str) -> bool:
         return False
 
 
+def _get_last_failed_stage(run_dir: Path) -> Optional[str]:
+    """
+    Get the last failed stage from summary.json to enable resume from failure.
+    
+    When a stage fails after max retries, it's saved with status="failed".
+    This function finds that stage so the pipeline can retry it on resume.
+    
+    Args:
+        run_dir: Path to the run directory
+    
+    Returns:
+        Name of the last failed stage, or None if no failures found
+    """
+    summary_file = run_dir / "summary.json"
+    if not summary_file.exists():
+        return None
+    
+    try:
+        with summary_file.open("r", encoding="utf-8") as f:
+            summary = json.load(f)
+        
+        # Find last stage with status="failed"
+        failed_stages = [
+            stage.get("name") 
+            for stage in summary.get("stages", []) 
+            if stage.get("status") == "failed"
+        ]
+        
+        if failed_stages:
+            last_failed = failed_stages[-1]  # Get the most recent failure
+            console.print(f"[yellow]♻️  Found failed stage: {last_failed}[/yellow]")
+            return last_failed
+        
+        return None
+    except Exception as e:
+        console.print(f"[yellow]⚠️  Could not read summary.json: {e}[/yellow]")
+        return None
+
+
+def _should_retry_stage(run_dir: Path, stage_name: str, failed_stage: Optional[str]) -> bool:
+    """
+    Determine if a stage should be retried based on previous run status.
+    
+    Logic:
+    - If stage was completed successfully (status="ok") → Skip
+    - If stage was the one that failed (status="failed") → Retry
+    - If stage comes after failed stage → Run (need to continue pipeline)
+    
+    Args:
+        run_dir: Path to the run directory
+        stage_name: Current stage being checked
+        failed_stage: Name of the last failed stage (if any)
+    
+    Returns:
+        True if stage should be retried/run, False if it should be skipped
+    """
+    # If no failed stage, use normal completion check
+    if not failed_stage:
+        return not _is_stage_completed(run_dir, stage_name)
+    
+    # If this is the failed stage, always retry
+    if stage_name == failed_stage:
+        console.print(f"[cyan]♻️  Retrying failed stage: {stage_name}[/cyan]")
+        return True
+    
+    # If stage was completed successfully, skip it
+    if _is_stage_completed(run_dir, stage_name):
+        return False
+    
+    # For stages after the failed one, run them
+    return True
+
+
 def _cleanup_temp_files(run_dir: Path, debug: bool = False):
     """
     Clean up temporary files after pipeline failure or completion.
@@ -493,6 +566,39 @@ def run(
     direct_url: Optional[str] = typer.Option(None, help="Process specific YouTube video URL directly (skips search)"),
     skip_api_check: bool = typer.Option(False, help="Skip API validation (NOT RECOMMENDED)")
 ):
+    """
+    🚨 CRITICAL ERROR HANDLING:
+    Any RuntimeError raised by stage failures will propagate up and cause
+    the pipeline to exit with code 1, ensuring batch processing stops immediately.
+    """
+    try:
+        _run_internal(query, runs_dir, config_dir, secrets_dir, direct_url, skip_api_check)
+    except RuntimeError as e:
+        # ❌ CRITICAL: Stage failed after max retries
+        console.print(f"\n[bold red]🛑 PIPELINE FAILED: {e}[/bold red]")
+        console.print("[yellow]Pipeline stopped after max retry attempts.[/yellow]")
+        console.print("[dim]Check pipeline.log for details.[/dim]\n")
+        raise typer.Exit(code=1)
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]⚠️ Pipeline interrupted by user.[/yellow]")
+        raise typer.Exit(code=130)
+    except Exception as e:
+        # ❌ Unexpected error
+        console.print(f"\n[bold red]🛑 UNEXPECTED ERROR: {e}[/bold red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+def _run_internal(
+    query: str,
+    runs_dir: Path,
+    config_dir: Path,
+    secrets_dir: Path,
+    direct_url: Optional[str],
+    skip_api_check: bool
+):
+    """Internal run function with all pipeline logic (wrapped by error handler)."""
     load_dotenv(secrets_dir / ".env")
 
     # 🔒 CRITICAL: Validate all APIs before starting pipeline
@@ -631,9 +737,30 @@ def run(
                         (latest / "path.txt").write_text(str(old_run_folder.resolve()), encoding="utf-8")
 
                         console.print(f"[bold green]✅ Resuming in folder: {old_run_folder.name}[/bold green]")
-                        console.print(f"[cyan]Pipeline will resume from last successful stage...[/cyan]\n")
+                        
+                        # 🔍 CRITICAL: Check for failed stages to enable resume from failure
+                        failed_stage = _get_last_failed_stage(old_run_folder)
+                        if failed_stage:
+                            console.print(f"[bold yellow]♻️  RESUMING FROM FAILED STAGE: {failed_stage}[/bold yellow]")
+                            console.print(f"[yellow]   This stage will be retried with {MAX_RETRIES_PER_STAGE} attempts[/yellow]")
+                            console.print(f"[dim]   All completed stages will be skipped[/dim]\n")
+                            # Store failed_stage for later use in stage checks
+                            summary["last_failed_stage"] = failed_stage
+                        else:
+                            console.print(f"[cyan]Pipeline will resume from last successful stage...[/cyan]\n")
 
                         reused_old_folder = True  # Mark that we reused old folder
+                        
+                        # 📖 CRITICAL: Load existing summary.json to preserve stage history
+                        summary_file = old_run_folder / "summary.json"
+                        if summary_file.exists():
+                            try:
+                                summary = _json.loads(summary_file.read_text(encoding="utf-8"))
+                                console.print(f"[dim]✓ Loaded existing summary with {len(summary.get('stages', []))} completed stages[/dim]")
+                            except Exception as e:
+                                console.print(f"[yellow]⚠️  Could not load summary.json: {e}[/yellow]")
+                                summary = {"run_id": old_run_folder.name, "stages": []}
+                        
                         # Skip renaming and database update since folder already exists
                         # Continue to pipeline stages below
                     else:
@@ -698,6 +825,9 @@ def run(
 
     console.rule("[bold]1) Search YouTube")
 
+    # 🔍 Get last failed stage (if any) for intelligent resume
+    failed_stage = summary.get("last_failed_stage")
+    
     # Check if direct URL provided (skip search)
     if direct_url:
         console.print(f"[cyan]🔗 Using direct video URL (skipping search): {direct_url}[/cyan]")
@@ -715,8 +845,8 @@ def run(
             "artifact": str(search_chosen.resolve()),
         })
         _save_summary(d["root"], summary)  # ← CRITICAL: Save after stage completion
-    # Check if stage already completed
-    elif _is_stage_completed(d["root"], "search"):
+    # Check if stage already completed (or needs retry)
+    elif not _should_retry_stage(d["root"], "search", failed_stage):
         console.print("[green]✓ Search stage already completed (skipping)[/green]")
         # Load search result from file
         search_chosen = d["root"] / "search.chosen.json"
@@ -772,8 +902,8 @@ def run(
 
     console.rule("[bold]2) Transcribe")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "transcribe"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "transcribe", failed_stage):
         console.print("[green]✓ Transcribe stage already completed (skipping)[/green]")
         transcript_path = d["root"] / "transcribe.txt"
     else:
@@ -841,8 +971,8 @@ def run(
 
     console.rule("[bold]3) Process Script")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "process"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "process", failed_stage):
         console.print("[green]✓ Process stage already completed (skipping)[/green]")
         processed_single = d["root"] / "script.txt"
     else:
@@ -901,8 +1031,8 @@ def run(
     # 4) TTS (must run BEFORE YouTube Metadata to generate timestamps.json)
     console.rule("[bold]4) TTS")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "tts"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "tts", failed_stage):
         console.print("[green]✓ TTS stage already completed (skipping)[/green]")
         narration_mp3 = d["root"] / "narration.mp3"
     else:
@@ -959,8 +1089,8 @@ def run(
     # NOTE: Must run AFTER TTS to read timestamps.json
     console.rule("[bold]5) YouTube Metadata")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "youtube_metadata"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "youtube_metadata", failed_stage):
         console.print("[green]✓ YouTube Metadata stage already completed (skipping)[/green]")
         ym_path = d["root"] / "output.titles.json"
     else:
@@ -1003,8 +1133,8 @@ def run(
 
     console.rule("[bold]7) Render Video")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "render"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "render", failed_stage):
         console.print("[green]✓ Render stage already completed (skipping)[/green]")
         final_video = d["root"] / "video_snap.mp4"
     else:
@@ -1146,8 +1276,8 @@ def run(
     # 7) Merge Narration + Video (loop video to audio length)
     console.rule("[bold]8) Merge Audio + Video")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "merge"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "merge", failed_stage):
         console.print("[green]✓ Merge stage already completed (skipping)[/green]")
         # Find merged video file by looking for .mp4 files with youtube_title
         merged_output = None
@@ -1213,8 +1343,8 @@ def run(
     # 9) Generate Thumbnail (optional but recommended)
     console.rule("[bold]9) Generate Thumbnail")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "thumbnail"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "thumbnail", failed_stage):
         console.print("[green]✓ Thumbnail stage already completed (skipping)[/green]")
         thumbnail_path = d["root"] / "thumbnail.jpg"
     else:
@@ -1282,8 +1412,8 @@ def run(
     # 10) Upload to YouTube (optional; requires OAuth client_secret.json in secrets/)
     console.rule("[bold]10) Upload to YouTube")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "upload"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "upload", failed_stage):
         console.print("[green]✓ Upload stage already completed (skipping)[/green]")
         # Try to get video_id from database or output.titles.json
         video_id = None
@@ -1338,8 +1468,8 @@ def run(
     # 11) Generate YouTube Short
     console.rule("[bold]11) Generate YouTube Short")
 
-    # Check if stage already completed
-    if _is_stage_completed(d["root"], "short"):
+    # Check if stage already completed (or needs retry)
+    if not _should_retry_stage(d["root"], "short", failed_stage):
         console.print("[green]✓ Short generation stage already completed (skipping)[/green]")
         short_path = d["root"] / "short_final.mp4"
     else:
@@ -1385,8 +1515,8 @@ def run(
     if short_path and short_path.exists():
         console.rule("[bold]12) Upload YouTube Short")
 
-        # Check if stage already completed
-        if _is_stage_completed(d["root"], "short_upload"):
+        # Check if stage already completed (or needs retry)
+        if not _should_retry_stage(d["root"], "short_upload", failed_stage):
             console.print("[green]✓ Short upload stage already completed (skipping)[/green]")
             # Try to get short_video_id from database or output.titles.json
             try:

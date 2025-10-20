@@ -1,0 +1,281 @@
+# 📚 YouTubeTB - Batch Processing Examples
+# This file contains example books organized by category
+
+# ============================================
+# HOW TO USE
+# ============================================
+# 1. Copy the books you want to process
+# 2. Paste them in books.txt
+# 3. Run: python -m src.presentation.cli.run_batch
+# 4. The system will:
+#    ✅ Skip books already completed
+#    ♻️  Resume incomplete books
+#    🚀 Process new books
+
+# ============================================
+# FORMAT
+# ============================================
+# Book Title | Author Name  (Recommended - more accurate)
+# OR
+# Book Title  (Will search without author filter)
+
+# ============================================
+# SELF-DEVELOPMENT BOOKS
+# ============================================
+
+# Habits & Productivity
+Atomic Habits | James Clear
+The 7 Habits of Highly Effective People | Stephen Covey
+Deep Work | Cal Newport
+Essentialism: The Disciplined Pursuit of Less | Greg McKeown
+The Power of Habit | Charles Duhigg
+Getting Things Done | David Allen
+
+# Success & Achievement
+Think and Grow Rich | Napoleon Hill
+The Success Principles | Jack Canfield
+The Magic of Thinking Big | David J. Schwartz
+Outliers: The Story of Success | Malcolm Gladwell
+
+# Mindset & Psychology
+Mindset: The New Psychology of Success | Carol Dweck
+Grit: The Power of Passion and Perseverance | Angela Duckworth
+The Obstacle Is the Way | Ryan Holiday
+Man's Search for Meaning | Viktor Frankl
+
+# ============================================
+# BUSINESS & ENTREPRENEURSHIP
+# ============================================
+
+# Startups & Innovation
+The Lean Startup | Eric Ries
+Zero to One | Peter Thiel
+The Hard Thing About Hard Things | Ben Horowitz
+Rework | Jason Fried
+
+# Marketing & Sales
+Influence: The Psychology of Persuasion | Robert Cialdini
+Purple Cow | Seth Godin
+Contagious: Why Things Catch On | Jonah Berger
+The 22 Immutable Laws of Marketing | Al Ries
+
+# Finance & Investing
+Rich Dad Poor Dad | Robert Kiyosaki
+The Intelligent Investor | Benjamin Graham
+The Millionaire Next Door | Thomas J. Stanley
+I Will Teach You to Be Rich | Ramit Sethi
+
+# ============================================
+# PSYCHOLOGY & HUMAN BEHAVIOR
+# ============================================
+
+# Decision Making
+Thinking, Fast and Slow | Daniel Kahneman
+Predictably Irrational | Dan Ariely
+The Art of Thinking Clearly | Rolf Dobelli
+Blink: The Power of Thinking Without Thinking | Malcolm Gladwell
+
+# Emotional Intelligence
+Emotional Intelligence | Daniel Goleman
+The Power of Now | Eckhart Tolle
+Daring Greatly | Brené Brown
+The Gifts of Imperfection | Brené Brown
+
+# ============================================
+# PHILOSOPHY & WISDOM
+# ============================================
+
+# Stoicism
+Meditations | Marcus Aurelius
+Letters from a Stoic | Seneca
+The Daily Stoic | Ryan Holiday
+A Guide to the Good Life | William Irvine
+
+# Power & Strategy
+The 48 Laws of Power | Robert Greene
+The Art of War | Sun Tzu
+Mastery | Robert Greene
+The 33 Strategies of War | Robert Greene
+
+# ============================================
+# HEALTH & WELLNESS
+# ============================================
+
+# Fitness & Nutrition
+Why We Sleep | Matthew Walker
+The 4-Hour Body | Tim Ferriss
+How Not to Die | Michael Greger
+Breath: The New Science of a Lost Art | James Nestor
+
+# Mental Health
+Lost Connections | Johann Hari
+The Body Keeps the Score | Bessel van der Kolk
+Maybe You Should Talk to Someone | Lori Gottlieb
+The Happiness Hypothesis | Jonathan Haidt
+
+# ============================================
+# COMMUNICATION & RELATIONSHIPS
+# ============================================
+
+# Communication Skills
+How to Win Friends and Influence People | Dale Carnegie
+Crucial Conversations | Kerry Patterson
+Never Split the Difference | Chris Voss
+The Charisma Myth | Olivia Fox Cabane
+
+# Relationships
+The 5 Love Languages | Gary Chapman
+Attached: The New Science of Adult Attachment | Amir Levine
+Hold Me Tight | Sue Johnson
+Men Are from Mars, Women Are from Venus | John Gray
+
+# ============================================
+# CREATIVITY & INNOVATION
+# ============================================
+
+# Creative Process
+The War of Art | Steven Pressfield
+Big Magic | Elizabeth Gilbert
+Steal Like an Artist | Austin Kleon
+Show Your Work! | Austin Kleon
+
+# Innovation & Design
+The Innovator's Dilemma | Clayton Christensen
+Creative Confidence | Tom Kelley
+A Whole New Mind | Daniel H. Pink
+Range: Why Generalists Triumph | David Epstein
+
+# ============================================
+# SCIENCE & LEARNING
+# ============================================
+
+# Learning & Memory
+Make It Stick | Peter C. Brown
+Ultralearning | Scott H. Young
+A Mind for Numbers | Barbara Oakley
+The Art of Learning | Josh Waitzkin
+
+# Popular Science
+Sapiens: A Brief History of Humankind | Yuval Noah Harari
+Homo Deus | Yuval Noah Harari
+The Gene: An Intimate History | Siddhartha Mukherjee
+The Selfish Gene | Richard Dawkins
+
+# ============================================
+# CLASSICS & FICTION (Book Summaries)
+# ============================================
+
+# Timeless Classics
+The Alchemist | Paulo Coelho
+1984 | George Orwell
+Animal Farm | George Orwell
+Brave New World | Aldous Huxley
+
+# Modern Fiction
+The Kite Runner | Khaled Hosseini
+A Thousand Splendid Suns | Khaled Hosseini
+The Book Thief | Markus Zusak
+Life of Pi | Yann Martel
+
+# ============================================
+# ARABIC BOOKS (عنوان + مؤلف)
+# ============================================
+
+# تطوير الذات
+العادات الذرية | جيمس كلير
+العادات السبع للناس الأكثر فعالية | ستيفن كوفي
+العمل العميق | كال نيوبورت
+فن اللامبالاة | مارك مانسون
+
+# الفلسفة والحكمة
+التأملات | ماركوس أوريليوس
+قوانين الطبيعة البشرية | روبرت غرين
+48 قانونا للقوة | روبرت غرين
+فن الحرب | سون تزو
+
+# علم النفس
+التفكير بسرعة وببطء | دانيال كانمان
+الذكاء العاطفي | دانيال جولمان
+قوة العادة | تشارلز دويج
+السلوك البشري | روبرت سالدين
+
+# الأعمال والريادة
+الأب الغني والأب الفقير | روبرت كيوساكي
+من الصفر إلى الواحد | بيتر ثيل
+الشركات الناشئة الرشيقة | إريك ريس
+إعادة التفكير | جايسون فرايد
+
+# ============================================
+# TESTING & VALIDATION
+# ============================================
+
+# Use these for testing the intelligent batch system:
+
+# Test Case 1: Mix of completed, incomplete, and new books
+# (Uncomment and modify based on your database state)
+# Atomic Habits | James Clear  # Already completed? Should skip
+# Deep Work | Cal Newport       # Incomplete? Should resume
+# The Alchemist                 # New book? Should process
+
+# Test Case 2: Books with same title but different authors
+# The Power | Rhonda Byrne
+# The Power | Naomi Alderman
+
+# Test Case 3: Books without authors (harder to match)
+# Sapiens
+# 1984
+# The Alchemist
+
+# ============================================
+# NOTES
+# ============================================
+
+# 📝 Matching Logic:
+# - System uses case-insensitive title + author matching
+# - "Atomic Habits | James Clear" matches "atomic habits | james clear"
+# - Books without author: matches ONLY by title
+
+# ⚡ Performance:
+# - Process 10-20 books per batch (recommended)
+# - Each book takes 10-60 minutes (depends on video length)
+# - Total batch time: multiply book count × average time
+
+# 🔄 Resume System:
+# - If interrupted, re-run with same books.txt
+# - System will skip completed and resume incomplete
+# - No duplicate work!
+
+# 🎯 Best Practices:
+# - Keep books.txt organized by category
+# - Use comments (#) for readability
+# - Include author names for accuracy
+# - Process similar books together (same playlist)
+
+# ============================================
+# QUICK START
+# ============================================
+
+# Step 1: Copy 5-10 books from examples above
+# Step 2: Paste in books.txt
+# Step 3: Run batch processing:
+#         python -m src.presentation.cli.run_batch
+# Step 4: Confirm when prompted
+# Step 5: Wait for completion (check terminal for progress)
+
+# ============================================
+# ADVANCED USAGE
+# ============================================
+
+# Process specific file:
+# python -m src.presentation.cli.run_batch --file my_books.txt
+
+# Force re-process completed books:
+# python -m src.presentation.cli.run_batch --no-skip
+
+# Set YouTube privacy:
+# python -m src.presentation.cli.run_batch --privacy unlisted
+
+# Combine options:
+# python -m src.presentation.cli.run_batch --file arabic_books.txt --privacy public
+
+# ============================================
