@@ -389,3 +389,327 @@ def update_book_status(
     return False
 
 
+# ============================================================================
+# YouTube Channel Sync - NEW SYSTEM
+# ============================================================================
+# استخلاص أسماء الكتب من قناة اليوتيوب لمزامنة database.json
+# يحل مشكلة فقدان البيانات عند التبديل بين البيئات (Local/Colab)
+# راجع: docs/DUPLICATE_CHECK_SYSTEM.md للتفاصيل الكاملة
+# ============================================================================
+
+import re
+import os
+
+
+def extract_book_from_youtube_title(title: str) -> Optional[str]:
+    """
+    استخلاص اسم الكتاب من عنوان فيديو YouTube.
+    
+    الصيغة المتوقعة: "[مقدمة] – [اسم الكتاب] | Book Summary"
+    
+    أمثلة:
+        "How To FINALLY Break Free – Atomic Habits | Book Summary"
+        → "Atomic Habits"
+        
+        "Master Your Money – Rich Dad Poor Dad | Book Summary"
+        → "Rich Dad Poor Dad"
+    
+    Args:
+        title: عنوان الفيديو من YouTube
+        
+    Returns:
+        اسم الكتاب أو None إذا لم يتم العثور على تطابق
+    """
+    if not title:
+        return None
+    
+    # Pattern 1: "– Book Name | Book Summary" (الصيغة الأساسية)
+    pattern1 = r'–\s*(.+?)\s*\|\s*Book Summary'
+    match = re.search(pattern1, title, re.IGNORECASE)
+    if match:
+        book_name = match.group(1).strip()
+        # تنظيف: إزالة emoji و أحرف خاصة زائدة
+        book_name = re.sub(r'[🎯💡🔥✨]+', '', book_name).strip()
+        return book_name
+    
+    # Pattern 2: "– Book Name" (fallback بدون "| Book Summary")
+    pattern2 = r'–\s*(.+?)$'
+    match = re.search(pattern2, title)
+    if match:
+        candidate = match.group(1).strip()
+        candidate = re.sub(r'[🎯💡🔥✨]+', '', candidate).strip()
+        # تأكد أنه ليس جملة طويلة (أسماء الكتب عادة < 10 كلمات)
+        if len(candidate.split()) <= 10:
+            return candidate
+    
+    return None
+
+
+def _get_youtube_api_key() -> Optional[str]:
+    """الحصول على YouTube API key من البيئة أو secrets."""
+    # جرّب من environment variables أولاً
+    api_key = os.environ.get("YOUTUBE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    if api_key:
+        return api_key
+    
+    # جرّب من secrets folder
+    repo_root = Path(__file__).resolve().parents[3]  # adapters → infrastructure → src → root
+    for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
+        if f.exists():
+            try:
+                return f.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+    
+    return None
+
+
+def _get_channel_id_from_config() -> Optional[str]:
+    """الحصول على Channel ID من config/settings.json"""
+    try:
+        repo_root = Path(__file__).resolve().parents[3]  # adapters → infrastructure → src → root
+        config_path = repo_root / "config" / "settings.json"
+        
+        if config_path.exists():
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            
+            # دعم الصيغتين: القديمة والجديدة
+            if "youtube_sync" in config:
+                return config["youtube_sync"].get("channel_id")
+            return config.get("youtube_channel_id")
+    except Exception:
+        pass
+    
+    return None
+
+
+def _is_youtube_sync_enabled() -> bool:
+    """فحص إذا الـ YouTube sync مفعّل في الإعدادات."""
+    try:
+        repo_root = Path(__file__).resolve().parents[3]  # adapters → infrastructure → src → root
+        config_path = repo_root / "config" / "settings.json"
+        
+        if config_path.exists():
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            
+            if "youtube_sync" in config:
+                return config["youtube_sync"].get("enabled", True)
+            
+            # افتراضياً: مفعّل
+            return True
+        else:
+            # الملف غير موجود: مفعّل افتراضياً
+            return True
+    except Exception:
+        # خطأ في القراءة: مفعّل افتراضياً
+        return True
+
+
+def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
+    """
+    مزامنة database.json من فيديوهات قناة YouTube.
+    
+    يجلب جميع الفيديوهات من القناة، يستخلص أسماء الكتب من العناوين،
+    ويبني database.json بناءً على ذلك.
+    
+    Args:
+        channel_id: معرّف قناة YouTube (اختياري، يستخدم الإعدادات إذا لم يُحدد)
+        
+    Returns:
+        True إذا نجحت المزامنة، False إذا فشلت
+    """
+    # فحص إذا الـ sync مفعّل
+    if not _is_youtube_sync_enabled():
+        print("[Sync] ⏭️  YouTube sync disabled in settings")
+        return False
+    
+    print("\n" + "="*60)
+    print("🔄 SYNCING DATABASE FROM YOUTUBE CHANNEL")
+    print("="*60 + "\n")
+    
+    # 1. الحصول على API key
+    api_key = _get_youtube_api_key()
+    if not api_key:
+        print("[Sync] ❌ YouTube API key not found")
+        print("[Sync]    Set YOUTUBE_API_KEY env or add secrets/api_key.txt")
+        return False
+    
+    # 2. الحصول على Channel ID
+    if not channel_id:
+        channel_id = _get_channel_id_from_config()
+    
+    if not channel_id:
+        print("[Sync] ❌ Channel ID not configured")
+        print("[Sync]    Add 'youtube_channel_id' to config/settings.json")
+        return False
+    
+    try:
+        from googleapiclient.discovery import build
+        youtube = build('youtube', 'v3', developerKey=api_key)
+        
+        # 3. الحصول على uploads playlist ID
+        print("[Sync] 📡 Fetching channel information...")
+        channel_response = youtube.channels().list(
+            part='contentDetails',
+            id=channel_id
+        ).execute()
+        
+        if not channel_response.get('items'):
+            print(f"[Sync] ❌ Channel not found: {channel_id}")
+            return False
+        
+        uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+        
+        # 4. جلب جميع الفيديوهات (مع pagination)
+        print("[Sync] 📥 Fetching videos...")
+        videos = []
+        next_page_token = None
+        page_num = 0
+        
+        while True:
+            page_num += 1
+            response = youtube.playlistItems().list(
+                part='snippet',
+                playlistId=uploads_playlist_id,
+                maxResults=50,
+                pageToken=next_page_token
+            ).execute()
+            
+            for item in response['items']:
+                videos.append({
+                    'title': item['snippet']['title'],
+                    'video_id': item['snippet']['resourceId']['videoId'],
+                    'published_at': item['snippet']['publishedAt']
+                })
+            
+            print(f"[Sync]    Page {page_num}: {len(response['items'])} videos")
+            
+            next_page_token = response.get('nextPageToken')
+            if not next_page_token:
+                break
+        
+        print(f"[Sync] ✅ Found {len(videos)} total videos\n")
+        
+        # 5. استخلاص أسماء الكتب وبناء database
+        print("[Sync] 📖 Extracting book names...")
+        db = {"books": []}
+        processed_books = set()  # لتجنب التكرار
+        skipped = 0
+        duplicates = 0
+        
+        for video in videos:
+            # استخلاص اسم الكتاب
+            book_name = extract_book_from_youtube_title(video['title'])
+            
+            if not book_name:
+                print(f"[Sync] ⏭️  No match: {video['title'][:60]}...")
+                skipped += 1
+                continue
+            
+            # تجنب التكرار (case-insensitive)
+            book_lower = book_name.lower()
+            if book_lower in processed_books:
+                print(f"[Sync] ⏭️  Duplicate: {book_name}")
+                duplicates += 1
+                continue
+            
+            processed_books.add(book_lower)
+            
+            # إضافة إلى database
+            entry = {
+                "main_title": book_name,
+                "author_name": None,  # يمكن استخلاصه لاحقاً
+                "date_added": video['published_at'],
+                "status": "uploaded",
+                "youtube_video_id": video['video_id'],
+                "youtube_url": f"https://www.youtube.com/watch?v={video['video_id']}",
+                "youtube_title": video['title'],  # حفظ العنوان الأصلي
+                "source": "youtube_sync"
+            }
+            
+            db["books"].append(entry)
+            print(f"[Sync] ✅ Added: {book_name}")
+        
+        # 6. حفظ database
+        if _save_database(db):
+            print(f"\n{'='*60}")
+            print(f"✅ DATABASE SYNCED SUCCESSFULLY!")
+            print(f"   Total books: {len(db['books'])}")
+            print(f"   Skipped: {skipped}")
+            print(f"   Duplicates: {duplicates}")
+            print(f"{'='*60}\n")
+            return True
+        else:
+            print(f"\n❌ Failed to save database")
+            return False
+            
+    except ImportError:
+        print("[Sync] ❌ google-api-python-client not installed")
+        print("[Sync]    Install with: pip install google-api-python-client")
+        return False
+    except Exception as e:
+        print(f"[Sync] ❌ Sync failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def ensure_database_synced() -> bool:
+    """
+    التأكد من أن database.json محدّث.
+    
+    الاستراتيجية:
+    1. فحص database.json المحلي
+    2. إذا كان فارغاً → محاولة sync من YouTube
+    3. إذا فشل الـ sync → الاستمرار بـ database فارغ
+    
+    Returns:
+        True إذا database جاهز (محلي أو من YouTube)
+        False إذا database فارغ ولم ينجح الـ sync
+    """
+    db = _load_database()
+    
+    # إذا في بيانات محلية
+    if db.get("books"):
+        print("[Database] ✅ Using local database ({} books)".format(len(db["books"])))
+        return True
+    
+    # database فارغ → محاولة sync
+    print("\n" + "="*60)
+    print("⚠️  LOCAL DATABASE EMPTY!")
+    print("   Attempting to sync from YouTube channel...")
+    print("="*60 + "\n")
+    
+    synced = sync_database_from_youtube()
+    
+    if synced:
+        print("[Database] ✅ Database restored from YouTube!")
+        return True
+    else:
+        print("[Database] ⚠️  Sync failed. Proceeding with empty database.")
+        print("[Database]     (Duplicate detection will not work)")
+        return False
+
+
+# ============================================================================
+# CLI Entry Point للاختبار
+# ============================================================================
+
+def main():
+    """نقطة دخول CLI لاختبار الـ sync."""
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == "sync":
+        print("🚀 Manual YouTube Sync\n")
+        success = sync_database_from_youtube()
+        sys.exit(0 if success else 1)
+    else:
+        print("Usage: python -m src.infrastructure.adapters.database sync")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+
+
+

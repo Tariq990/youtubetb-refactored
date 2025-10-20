@@ -642,6 +642,15 @@ def _run_internal(
     # Preflight: internet, dependencies, keys. Retry until everything is ready, logging into combined log.
     _preflight_check(d["root"], config_dir, combined_log=combined_log)
 
+    # 🔄 YOUTUBE SYNC: Ensure database.json is up-to-date (syncs from YouTube if empty)
+    console.print("\n[bold cyan]🔄 Database Sync Check[/bold cyan]")
+    try:
+        from src.infrastructure.adapters.database import ensure_database_synced
+        ensure_database_synced()
+    except Exception as e:
+        console.print(f"[yellow]⚠️  Database sync failed: {e}[/yellow]")
+        console.print("[dim]   Continuing with local database (duplicate detection may not work)[/dim]")
+
     # EARLY RENAME: Get official book name from user query and rename folder before any heavy processing
     console.rule("[bold]0) Get Book Metadata & Rename")
     try:
