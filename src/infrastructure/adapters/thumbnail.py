@@ -853,7 +853,7 @@ def generate_thumbnail(
     text_padding_right = gutter  # Space from text end to screen edge
     # (Removed semi-transparent panel to keep clean design)
 
-    # Paste cover (FIT mode: fit entire cover in box, no cropping)
+    # Paste cover (FIT) with an elegant double-border frame (outer gold, inner dark)
     if cover_path:
         try:
             cover = Image.open(cover_path).convert("RGB")
@@ -863,14 +863,51 @@ def generate_thumbnail(
             ratio = min(cb_w / cover.width, cb_h / cover.height)  # MIN fits the box
             nw, nh = int(cover.width * ratio), int(cover.height * ratio)
             
-            # Center the resized cover in the box
-            cx = cover_box[0] + (cb_w - nw) // 2
-            cy = cover_box[1] + (cb_h - nh) // 2
+            # Parameters for frame
+            outer_thickness = max(6, int(min(nw, nh) * 0.03))  # responsive thickness
+            inner_thickness = max(3, int(outer_thickness * 0.55))
+            radius = max(12, int(min(nw, nh) * 0.05))
             
-            base.paste(cover, (cx, cy))
+            # Total size including borders
+            total_w = nw + outer_thickness * 2 + inner_thickness * 2
+            total_h = nh + outer_thickness * 2 + inner_thickness * 2
+            
+            # Create framed image with transparent background
+            framed = Image.new("RGBA", (total_w, total_h), (0, 0, 0, 0))
+            fd = ImageDraw.Draw(framed)
+            
+            # Draw outer border (using subtitle color) with fill
+            outer_color = (subtitle_color[0], subtitle_color[1], subtitle_color[2], 255)
+            fd.rounded_rectangle([0, 0, total_w, total_h], radius=radius + outer_thickness + inner_thickness, fill=outer_color)
+            
+            # Draw inner gold rim with fill (remove dark layer to avoid lines)
+            inset2 = outer_thickness
+            rim_color = (245, 222, 179, 255)
+            fd.rounded_rectangle([inset2, inset2, total_w - inset2, total_h - inset2], radius=radius, fill=rim_color)
+            
+            # Resize cover to inner area (nw x nh) and apply rounded mask
+            cover_resized = cover.resize((nw, nh), lanczos)
+            mask = Image.new("L", (nw, nh), 0)
+            md = ImageDraw.Draw(mask)
+            md.rounded_rectangle([0, 0, nw, nh], radius=radius - 4 if radius > 8 else radius, fill=255)
+            
+            # Paste cover into framed image
+            cover_pos = (inset2, inset2)
+            framed.paste(cover_resized, cover_pos, mask)
+            
+            # Center the framed cover in the cover_box
+            cx = cover_box[0] + (cb_w - total_w) // 2
+            cy = cover_box[1] + (cb_h - total_h) // 2
+            
+            # Create mask for the entire framed image to avoid background
+            frame_mask = Image.new("L", (total_w, total_h), 0)
+            fm_draw = ImageDraw.Draw(frame_mask)
+            fm_draw.rounded_rectangle([0, 0, total_w, total_h], radius=radius + outer_thickness + inner_thickness, fill=255)
+            
+            base.paste(framed, (cx, cy), frame_mask)
         except Exception as e:
             if debug:
-                print("[thumb] paste cover failed:", e)
+                print("[thumb] paste framed cover failed:", e)
 
     # Title and subtitle on right side
     # Fonts: prefer Cairo (Bold for title, SemiBold/Regular for subtitle). Allow overriding via env paths as well.
