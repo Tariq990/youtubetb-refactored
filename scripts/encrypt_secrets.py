@@ -80,7 +80,8 @@ def main():
         "api_key.txt",
         "client_secret.json",
         "cookies.txt",
-        "token.json"
+        "token.json",
+        ".env"  # Environment variables
     ]
     
     existing_files = [f for f in secret_files if (secrets_dir / f).exists()]

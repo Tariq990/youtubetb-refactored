@@ -3,13 +3,15 @@
     "api_key.txt.enc",
     "client_secret.json.enc",
     "cookies.txt.enc",
-    "token.json.enc"
+    "token.json.enc",
+    ".env.enc"
   ],
   "original_files": [
     "api_key.txt",
     "client_secret.json",
     "cookies.txt",
-    "token.json"
+    "token.json",
+    ".env"
   ],
   "encryption_method": "Fernet (AES-128)",
   "kdf": "PBKDF2-SHA256",
