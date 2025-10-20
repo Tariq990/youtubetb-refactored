@@ -690,13 +690,14 @@ def _run_internal(
                 status = existing.get('status') if existing else None
                 reused_old_folder = False  # Track if we reused an existing folder
 
-                if existing and status == 'done':
+                if existing and status in ['done', 'uploaded']:
                     # Book completely done - STOP
                     console.print(f"\n[bold red]⛔ Book already processed![/bold red]")
                     console.print(f"[yellow]Title:[/yellow] {existing.get('main_title')}")
                     console.print(f"[yellow]Author:[/yellow] {existing.get('author_name', 'Unknown')}")
                     console.print(f"[yellow]Playlist:[/yellow] {existing.get('playlist', 'Unknown')}")
                     console.print(f"[yellow]Date:[/yellow] {existing.get('date_added', 'Unknown')}")
+                    console.print(f"[yellow]Status:[/yellow] {status}")
                     if existing.get('youtube_url'):
                         console.print(f"[yellow]YouTube:[/yellow] {existing['youtube_url']}")
                     if existing.get('short_youtube_url'):
