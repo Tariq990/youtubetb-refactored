@@ -385,44 +385,66 @@ def _total_char_count(text: str) -> int:
 
 def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: int = 700) -> int:
     """
-    Calculate optimal title size based on text characteristics:
-    - Total character count
-    - Word count
-    - Average word length
-    Returns a size between 90-150 optimized for visual balance
+    Advanced geometric calculation for optimal title size with maximum dynamics.
+    Uses text density, word distribution, and golden ratio for perfect balance.
     """
     word_count = _word_count(text)
     char_count = _total_char_count(text)
     avg_word_len = _avg_word_length(text)
 
-    # Base size selection by word count (primary factor)
+    if word_count == 0 or char_count == 0:
+        return base_size
+
+    # Calculate text density (characters per word)
+    density = char_count / word_count
+
+    # Golden ratio for aesthetic scaling
+    golden_ratio = 1.618
+
+    # Base size using geometric scaling
+    # Size inversely proportional to density and word count
+    geometric_factor = max_width / (density * avg_word_len * word_count ** 0.5)
+    size = base_size * geometric_factor * 0.05  # Reduced scale factor for better fit
+
+    # Word count adjustments with exponential decay
     if word_count <= 2:
-        size = 230  # Increased for 2-word titles (fits better with auto-scaling)
+        size *= 1.8  # Boost for short titles
     elif word_count == 3:
-        # Fine-tune based on average word length
         if avg_word_len > 7:
-            size = 130  # Long words (was 115 → +15px)
+            size *= 0.9
         elif avg_word_len > 5:
-            size = 170  # Medium-long words (was 150 → +20px)
+            size *= 1.2
         else:
-            size = 205  # Short words (was 185 → +20px)
+            size *= 1.5
     elif word_count == 4:
-        size = 150
+        size *= 1.1
     elif word_count == 5:
-        size = 135
+        size *= 1.0
     elif word_count == 6:
-        size = 125
+        size *= 0.95
     else:
-        # 7+ words: scale down more aggressively
-        size = max(95, 160 - (word_count - 6) * 8)
+        # Exponential decay for long titles
+        decay = 0.92 ** (word_count - 6)
+        size *= decay
 
-    # Additional adjustment for very long total text
-    if char_count > 50:
-        size = max(95, size - 5)
+    # Character count fine-tuning with logarithmic scaling
+    if char_count > 60:
+        size *= 0.85
+    elif char_count > 50:
+        size *= 0.9
     elif char_count > 40:
-        size = max(100, size - 3)
+        size *= 0.95
+    elif char_count < 20:
+        size *= 1.1
 
-    return int(max(90, min(230, size)))  # Range: 90-230 (balanced)
+    # Apply golden ratio for final aesthetic touch
+    size = size / golden_ratio if size > 150 else size * golden_ratio * 0.8
+
+    # Ensure size is within dynamic range based on text complexity
+    min_size = max(80, 200 - word_count * 5)
+    max_size = min(250, 300 - density * 2)
+
+    return int(max(min_size, min(max_size, size)))
 
 
 def _wrap_text_balanced(text: str, font: Any, max_width: int, max_lines: int = 3) -> List[str]:
@@ -831,34 +853,20 @@ def generate_thumbnail(
     text_padding_right = gutter  # Space from text end to screen edge
     # (Removed semi-transparent panel to keep clean design)
 
-    # Paste cover (FILL mode: stretch to fill entire box, crop if needed)
+    # Paste cover (FIT mode: fit entire cover in box, no cropping)
     if cover_path:
         try:
             cover = Image.open(cover_path).convert("RGB")
-            # FILL: use MAX ratio to fill box completely, then crop overflow
+            # FIT: use MIN ratio to fit entire cover in box without cropping
             cb_w = cover_box_w
             cb_h = cover_box_h
-            ratio = max(cb_w / cover.width, cb_h / cover.height)  # MAX fills the box
+            ratio = min(cb_w / cover.width, cb_h / cover.height)  # MIN fits the box
             nw, nh = int(cover.width * ratio), int(cover.height * ratio)
-            RESAMPLING = getattr(Image, "Resampling", None)
-            lanczos = getattr(RESAMPLING, "LANCZOS", None) if RESAMPLING else getattr(Image, "LANCZOS", 1)
-            cover = cover.resize((nw, nh), lanczos)
             
-            # Crop to exact box size if oversized
-            if nw > cb_w or nh > cb_h:
-                left = (nw - cb_w) // 2
-                top = (nh - cb_h) // 2
-                cover = cover.crop((left, top, left + cb_w, top + cb_h))
-                nw, nh = cb_w, cb_h
+            # Center the resized cover in the box
+            cx = cover_box[0] + (cb_w - nw) // 2
+            cy = cover_box[1] + (cb_h - nh) // 2
             
-            cx = cover_box[0]
-            cy = cover_box[1]
-            # Shadow
-            shadow = Image.new("RGBA", (nw + 30, nh + 30), (0, 0, 0, 0))
-            sd = ImageDraw.Draw(shadow)
-            sd.rectangle([10, 10, nw + 20, nh + 20], fill=(0, 0, 0, 140))
-            shadow = shadow.filter(ImageFilter.GaussianBlur(12))
-            base.paste(shadow, (cx - 15, cy - 15), shadow)
             base.paste(cover, (cx, cy))
         except Exception as e:
             if debug:
@@ -996,12 +1004,19 @@ def generate_thumbnail(
     else:
         target_lines = 3  # 6+ words also use 3 lines max
 
-    # Special handling for 5-word titles: split as 2+3
+    # Special handling for 5-word titles: split as 3+2
     if word_count == 5:
         words = render_title.split()
         title_lines = [
+            " ".join(words[:3]),  # First 3 words
+            " ".join(words[3:])   # Last 2 words
+        ]
+    elif word_count == 4:
+        # Special handling for 4-word titles: split as 2+2 for better balance
+        words = render_title.split()
+        title_lines = [
             " ".join(words[:2]),  # First 2 words
-            " ".join(words[2:])   # Last 3 words
+            " ".join(words[2:])   # Last 2 words
         ]
     else:
         # Use balanced line breaking for all other titles
@@ -1018,6 +1033,9 @@ def generate_thumbnail(
         title_font = _load_font(tsize, title_font_cands, strict=strict_fonts, role="title", debug=debug)
         # Re-apply the same splitting logic
         if word_count == 5:
+            words = render_title.split()
+            title_lines = [" ".join(words[:3]), " ".join(words[3:])]
+        elif word_count == 4:
             words = render_title.split()
             title_lines = [" ".join(words[:2]), " ".join(words[2:])]
         else:
