@@ -6,8 +6,10 @@ from typing import Any
 from bidi.algorithm import get_display
 
 # Try to set Windows console to use UTF-8 code page so Arabic prints correctly.
+# Only run on Windows to avoid "chcp not found" warning on Linux/Mac
 try:
-    os.system('chcp 65001 >nul')
+    if sys.platform == 'win32':
+        os.system('chcp 65001 >nul')
 except Exception:
     pass
 
