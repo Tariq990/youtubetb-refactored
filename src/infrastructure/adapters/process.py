@@ -78,13 +78,42 @@ def _safe_text(resp) -> str:
         return ""
 
 
-def _gen(model, prompt: str, mime_type: str = "text/plain") -> str:
-    try:
-        resp = model.generate_content(prompt, generation_config={"response_mime_type": mime_type})
-        return _safe_text(resp)
-    except Exception as e:
-        print(f"API call failed: {e}")
-        return ""
+def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3) -> str:
+    """
+    Generate content with retry logic for timeout errors.
+    
+    Args:
+        model: Gemini model instance
+        prompt: Prompt text
+        mime_type: Response MIME type
+        max_retries: Maximum retry attempts for 504 errors
+        
+    Returns:
+        Generated text or empty string on failure
+    """
+    for attempt in range(max_retries):
+        try:
+            # Set longer timeout for large prompts
+            request_options = {"timeout": 180}  # 3 minutes timeout
+            resp = model.generate_content(
+                prompt, 
+                generation_config={"response_mime_type": mime_type},
+                request_options=request_options
+            )
+            return _safe_text(resp)
+        except Exception as e:
+            error_msg = str(e)
+            # Retry on timeout/deadline errors
+            if "504" in error_msg or "Deadline" in error_msg or "timeout" in error_msg.lower():
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 5  # 5s, 10s, 15s backoff
+                    print(f"⚠️  Timeout error (attempt {attempt + 1}/{max_retries}). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+            print(f"❌ API call failed after {attempt + 1} attempts: {e}")
+            return ""
+    print(f"❌ All {max_retries} retry attempts failed")
+    return ""
 
 
 def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
