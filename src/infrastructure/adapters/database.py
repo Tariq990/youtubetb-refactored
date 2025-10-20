@@ -64,9 +64,18 @@ def check_book_exists(book_name: str, author_name: Optional[str] = None) -> Opti
 
         # If author provided, check both title and author
         if author_lower:
-            author_match = book.get("author_name", "").strip().lower() == author_lower
-            if title_match and author_match:
-                return book
+            db_author = book.get("author_name")
+            # Match if:
+            # 1. DB has same author (exact match)
+            # 2. DB has no author (null) - match by title only
+            if db_author:
+                author_match = db_author.strip().lower() == author_lower
+                if title_match and author_match:
+                    return book
+            else:
+                # DB author is null, match by title only
+                if title_match:
+                    return book
         # If no author provided, match by title only
         elif title_match:
             return book
