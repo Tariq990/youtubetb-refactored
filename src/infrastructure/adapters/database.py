@@ -457,7 +457,7 @@ def extract_book_from_youtube_title(title: str) -> Optional[str]:
 def _get_youtube_api_key() -> Optional[str]:
     """الحصول على YouTube API key من البيئة أو secrets."""
     # جرّب من environment variables أولاً
-    api_key = os.environ.get("YOUTUBE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("YT_API_KEY") or os.environ.get("YOUTUBE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     if api_key:
         return api_key
     
