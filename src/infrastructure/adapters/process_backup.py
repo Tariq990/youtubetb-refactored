@@ -220,6 +220,7 @@ def _get_random_user_agent() -> str:
 def _get_book_cover_from_amazon(title: str, author: Optional[str]) -> Optional[str]:
     """
     البحث عن غلاف الكتاب في Amazon وإرجاع رابط الصورة.
+    Uses the new amazon_cover module for better reliability.
     يبحث باسم الكتاب + اسم الكاتب (إنجليزي فقط).
     يختار الطبعة الأعلى تقييماً من أول 5 نتائج.
     
@@ -597,11 +598,23 @@ def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[s
     else:
         print(f"[Cover] البحث عن غلاف: {title}")
 
-    # استخدام Amazon للبحث
+    # Try new amazon_cover module first (with Playwright)
+    try:
+        from .amazon_cover import get_book_cover_from_amazon
+        url = get_book_cover_from_amazon(title, author, use_playwright=True)
+        if url:
+            print(f"[Cover] ✅ تم العثور على الغلاف من Amazon (Playwright)")
+            return url
+    except ImportError:
+        print("[Cover] Warning: amazon_cover module not available, using fallback")
+    except Exception as e:
+        print(f"[Cover] amazon_cover error: {e}, trying fallback")
+    
+    # Fallback to old method
     url = _get_book_cover_from_amazon(title, author)
     
     if url:
-        print(f"[Cover] ✅ تم العثور على الغلاف من Amazon")
+        print(f"[Cover] ✅ تم العثور على الغلاف من Amazon (fallback)")
         return url
     
     print("[Cover] ❌ لم يتم العثور على غلاف")

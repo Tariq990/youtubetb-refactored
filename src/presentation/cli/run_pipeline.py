@@ -642,6 +642,34 @@ def _run_internal(
     # Preflight: internet, dependencies, keys. Retry until everything is ready, logging into combined log.
     _preflight_check(d["root"], config_dir, combined_log=combined_log)
 
+    # 🍪 COOKIES CHECK: Test cookies before starting (optional but recommended)
+    console.print("\n[bold cyan]🍪 Cookies Check[/bold cyan]")
+    try:
+        from src.infrastructure.adapters.cookie_manager import check_cookies_status, interactive_cookie_setup
+        
+        cookies_valid, cookies_msg = check_cookies_status(verbose=False)
+        
+        if cookies_valid:
+            console.print(f"[green]✓[/green] {cookies_msg}")
+        else:
+            console.print(f"[yellow]⚠️  {cookies_msg}[/yellow]")
+            console.print("[dim]   Cookies are optional but recommended for age-restricted videos[/dim]")
+            
+            # Ask user if they want to set up cookies now
+            try:
+                setup_now = input("\nDo you want to set up cookies now? (y/n): ").strip().lower()
+                if setup_now == 'y':
+                    success = interactive_cookie_setup()
+                    if not success:
+                        console.print("[yellow]⚠️  Continuing without cookies (some videos may fail)[/yellow]")
+                else:
+                    console.print("[dim]   Continuing without cookies[/dim]")
+            except KeyboardInterrupt:
+                console.print("\n[dim]   Skipping cookies setup[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]⚠️  Cookies check failed: {e}[/yellow]")
+        console.print("[dim]   Continuing without cookies validation[/dim]")
+    
     # 🔄 YOUTUBE SYNC: Ensure database.json is up-to-date (syncs from YouTube if empty)
     console.print("\n[bold cyan]🔄 Database Sync Check[/bold cyan]")
     try:

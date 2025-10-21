@@ -38,7 +38,17 @@ covers/
 covers_*/
 analyze_process.py
 run_comparison.py
+test_covers.py
 # Note: tests/ directory test files are included
+
+# Temporary files
+tmp/
+tmp_*/
+*.tmp
+*_tmp.*
+video_titles.txt
+books.txt
+books_examples.txt
 
 # IDEs
 .vscode/

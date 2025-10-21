@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 # Import CLI menu
-from presentation.cli.run_menu import main as run_menu
+from presentation.cli.run_menu import main as run_menu  # type: ignore
 
 
 def main():

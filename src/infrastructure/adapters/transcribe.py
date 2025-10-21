@@ -489,10 +489,32 @@ def main(
         return None
 
     cookies = None
-    for c in (REPO_ROOT / "secrets" / "cookies.txt", REPO_ROOT / "cookies.txt"):
+    cookie_paths = [
+        REPO_ROOT / "secrets" / "cookies.txt",
+        REPO_ROOT / "cookies.txt"
+    ]
+    
+    for c in cookie_paths:
         if c.exists():
-            cookies = c
-            break
+            # Verify cookies file is not empty and has valid format
+            try:
+                content = c.read_text(encoding='utf-8').strip()
+                if content and len(content) > 50:  # Basic validation
+                    cookies = c
+                    print(f"[Cookies] Using cookies file: {c}")
+                    break
+                else:
+                    print(f"[Cookies] Warning: {c} exists but appears empty or invalid")
+            except Exception as e:
+                print(f"[Cookies] Warning: Failed to read {c}: {e}")
+    
+    if not cookies:
+        print("[Cookies] No valid cookies.txt found")
+        print("[Cookies] Locations checked:")
+        for cp in cookie_paths:
+            print(f"  - {cp}")
+        print("[Cookies] Tip: Export cookies.txt from browser using 'Get cookies.txt' extension")
+        print("[Cookies] Make sure to login to YouTube first, then export cookies")
 
     attempts = 2
     methods = ['yt-dlp', 'transcript-api']

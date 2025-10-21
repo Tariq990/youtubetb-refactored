@@ -541,6 +541,8 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
     if not api_key:
         print("[Sync] ❌ YouTube API key not found")
         print("[Sync]    Set YOUTUBE_API_KEY env or add secrets/api_key.txt")
+        print("[Sync]    Or add YT_API_KEY to .env file")
+        print("[Sync]    Database will remain empty - manual entry required")
         return False
     
     # 2. الحصول على Channel ID
@@ -549,11 +551,22 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
     
     if not channel_id:
         print("[Sync] ❌ Channel ID not configured")
-        print("[Sync]    Add 'youtube_channel_id' to config/settings.json")
+        print("[Sync]    Add 'youtube_channel_id' to config/settings.json under 'youtube_sync' section")
+        print("[Sync]    Example:")
+        print('[Sync]      "youtube_sync": {')
+        print('[Sync]        "enabled": true,')
+        print('[Sync]        "channel_id": "YOUR_CHANNEL_ID_HERE"')
+        print('[Sync]      }')
         return False
     
     try:
         from googleapiclient.discovery import build
+    except ImportError:
+        print("[Sync] ❌ google-api-python-client not installed")
+        print("[Sync]    Run: pip install google-api-python-client")
+        return False
+    
+    try:
         youtube = build('youtube', 'v3', developerKey=api_key)
         
         # 3. الحصول على uploads playlist ID

@@ -1,9 +1,0 @@
-# 1️⃣ Clone المشروع
-!git clone https://github.com/Tariq990/youtubetb-refactored.git
-%cd youtubetb-refactored
-
-# 2️⃣ Setup تلقائي (يسوي كل شي!)
-!python setup_colab.py
-
-# 3️⃣ شغّل البرنامج
-!python main.py

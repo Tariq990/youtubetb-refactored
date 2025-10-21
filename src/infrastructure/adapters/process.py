@@ -283,8 +283,8 @@ def _get_random_user_agent() -> str:
 def _get_book_cover_from_amazon(title: str, author: Optional[str]) -> Optional[str]:
     """
     البحث عن غلاف الكتاب في Amazon وإرجاع رابط الصورة.
+    Uses the new amazon_cover module with Playwright support (more reliable).
     يبحث باسم الكتاب + اسم الكاتب (إنجليزي فقط).
-    يختار الطبعة الأعلى تقييماً من أول 5 نتائج.
     
     Args:
         title: اسم الكتاب (بالإنجليزية)
@@ -294,144 +294,55 @@ def _get_book_cover_from_amazon(title: str, author: Optional[str]) -> Optional[s
         رابط صورة الغلاف إذا نجح، None إذا فشل
     """
     try:
+        from .amazon_cover import get_book_cover_from_amazon
+        return get_book_cover_from_amazon(title, author, use_playwright=True)
+    except ImportError:
+        print("[Amazon] Warning: amazon_cover module not available, using fallback")
+        # Fallback to simple requests method
+        return _get_book_cover_from_amazon_fallback(title, author)
+    except Exception as e:
+        print(f"[Amazon] Error: {e}")
+        return None
+
+
+def _get_book_cover_from_amazon_fallback(title: str, author: Optional[str]) -> Optional[str]:
+    """
+    Fallback method for Amazon cover fetch (simple requests).
+    Used if amazon_cover module is not available.
+    """
+    try:
         import urllib.parse
         
-        # بناء استعلام البحث
         query = f"{title} {author}" if author else title
         encoded_query = urllib.parse.quote(query)
         search_url = f"https://www.amazon.com/s?k={encoded_query}&i=stripbooks&s=relevancerank"
         
-        print(f"[Amazon] البحث عن: {query}")
+        print(f"[Amazon/Fallback] Searching for: {query}")
         
-        # إعداد headers أقوى (تقليد متصفح حقيقي)
         headers = {
             'User-Agent': _get_random_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            'DNT': '1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
         
-        # محاولة مع retry (3 محاولات)
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # تأخير عشوائي أطول بين المحاولات
-                if attempt > 0:
-                    delay = random.uniform(5.0, 10.0) * (attempt + 1)
-                    print(f"[Amazon] محاولة {attempt + 1}/{max_retries} بعد {delay:.1f} ثانية...")
-                    time.sleep(delay)
-                else:
-                    time.sleep(random.uniform(2.0, 4.0))
-                
-                # إرسال الطلب
-                response = requests.get(search_url, headers=headers, timeout=20)
-                response.raise_for_status()
-                break  # نجح، اخرج من loop
-                
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code in [503, 403]:
-                    if attempt < max_retries - 1:
-                        print(f"[Amazon] ⚠️ تم حظر الطلب ({e.response.status_code}), إعادة المحاولة...")
-                        continue
-                    else:
-                        print(f"[Amazon] ❌ تم حظر الطلب ({e.response.status_code}) بعد {max_retries} محاولات")
-                        return None
-                raise
-        else:
-            print("[Amazon] ❌ فشلت جميع المحاولات")
-            return None
+        time.sleep(random.uniform(1.0, 2.0))
+        response = requests.get(search_url, headers=headers, timeout=15)
+        response.raise_for_status()
         
-        # تحليل HTML
         soup = BeautifulSoup(response.content, 'html.parser')
+        product_img = soup.find('img', class_='s-image')
         
-        # البحث عن نتائج البحث
-        search_results = soup.find_all('div', {'data-component-type': 's-search-result'})
+        if product_img and product_img.get('src'):
+            cover_img = str(product_img['src'])
+            cover_img = re.sub(r'_AC_U[XY]\d+_', '_AC_UL600_', cover_img)
+            print(f"[Amazon/Fallback] ✅ Found cover")
+            return cover_img
         
-        if not search_results:
-            # احتياطي: استخدام selector أبسط
-            print("[Amazon] لم يتم العثور على نتائج منظمة، محاولة طريقة احتياطية...")
-            product_img = soup.find('img', class_='s-image')
-            if product_img and product_img.get('src'):
-                cover_img = str(product_img['src'])
-                # تحسين جودة الصورة
-                cover_img = re.sub(r'_AC_U[XY]\d+_', '_AC_UL600_', cover_img)
-                print(f"[Amazon] ✅ تم العثور على الغلاف (طريقة احتياطية)")
-                return cover_img
-            print("[Amazon] ❌ لم يتم العثور على غلاف")
-            return None
-        
-        print(f"[Amazon] تم العثور على {len(search_results)} نتيجة، جاري التحليل...")
-        
-        # تحليل أول 5 نتائج لإيجاد الأعلى تقييماً
-        best_result = None
-        best_score = -1
-        
-        for idx, result in enumerate(search_results[:5]):
-            # استخراج التقييم
-            rating_elem = result.find('span', class_='a-icon-alt')
-            rating = 0.0
-            if rating_elem:
-                rating_text = rating_elem.get_text()
-                rating_match = re.search(r'(\d+\.?\d*)', rating_text)
-                if rating_match:
-                    rating = float(rating_match.group(1))
-            
-            # استخراج عدد المراجعات
-            review_count_elem = result.find('span', {'aria-label': re.compile(r'\d+')})
-            review_count = 0
-            if review_count_elem:
-                review_text = review_count_elem.get('aria-label')
-                if review_text and isinstance(review_text, str):
-                    review_match = re.search(r'(\d+)', review_text.replace(',', ''))
-                    if review_match:
-                        review_count = int(review_match.group(1))
-            
-            # حساب النقاط: الموقع (50-10) + التقييم (×10) + المراجعات (÷100، حد أقصى 10)
-            position_score = (5 - idx) * 10
-            rating_score = rating * 10
-            review_score = min(review_count / 100, 10)
-            total_score = position_score + rating_score + review_score
-            
-            print(f"[Amazon]   النتيجة {idx+1}: تقييم={rating}, مراجعات={review_count}, نقاط={total_score:.1f}")
-            
-            if total_score > best_score:
-                best_score = total_score
-                best_result = result
-        
-        # استخراج الصورة من أفضل نتيجة
-        if best_result:
-            img_tag = best_result.find('img', class_='s-image')
-            if img_tag and img_tag.get('src'):
-                cover_img = str(img_tag['src'])
-                # تحسين جودة الصورة
-                cover_img = re.sub(r'_AC_U[XY]\d+_', '_AC_UL600_', cover_img)
-                print(f"[Amazon] ✅ تم العثور على الغلاف الأعلى تقييماً")
-                return cover_img
-        
-        print("[Amazon] ❌ لم يتم العثور على غلاف مناسب")
+        print("[Amazon/Fallback] ❌ No cover found")
         return None
         
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 503:
-            print(f"[Amazon] ❌ تم حظر الطلب (503 Service Unavailable)")
-        elif e.response.status_code == 403:
-            print(f"[Amazon] ❌ تم حظر الطلب (403 Forbidden)")
-        else:
-            print(f"[Amazon] ❌ خطأ HTTP: {e.response.status_code}")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"[Amazon] ❌ خطأ في الشبكة: {str(e)}")
-        return None
     except Exception as e:
-        print(f"[Amazon] ❌ خطأ في التحليل: {str(e)}")
+        print(f"[Amazon/Fallback] ❌ Error: {e}")
         return None
 
 

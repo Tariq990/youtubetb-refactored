@@ -518,16 +518,17 @@ def _generate_tags(book_title: str, author_name: Optional[str]) -> list[str]:
 def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompts: dict) -> list[str]:
     """
     Generate AI-powered topic tags using Gemini.
-    Returns 20 content-related tags without mentioning book/author names.
+    Returns 40+ content-related tags without mentioning book/author names.
     Upload stage will trim to fit 500 char limit automatically.
     """
     tpl = prompts.get("tags_template") or (
-        "Give me 20 relevant tags for this book that reflect its content and topic.\n\n"
+        "Give me 40 relevant tags for this book that reflect its content and topic.\n\n"
         "CRITICAL RULES:\n"
         "- Do NOT mention the book title: {book_name}\n"
         "- Do NOT mention the author name: {author_name}\n"
         "- Return ONLY topic-related keywords (e.g., 'personal development', 'success strategies')\n"
         "- Each tag should be 1-3 words maximum\n"
+        "- Include general AND specific tags\n"
         "- Return as a simple comma-separated list\n\n"
         "Book: {book_name} by {author_name}"
     )
