@@ -33,12 +33,12 @@ build/
 .mypy_cache/
 .ruff_cache/
 
-# Test files
-test_*.py
+# Test artifacts and temporary test files (but keep actual test files in tests/)
 covers/
 covers_*/
 analyze_process.py
 run_comparison.py
+# Note: tests/ directory test files are included
 
 # IDEs
 .vscode/
