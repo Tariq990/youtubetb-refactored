@@ -49,7 +49,7 @@ def validate_cookies_content(cookies_path: Path) -> Tuple[bool, str]:
         
         # Check minimum size (valid cookies file should be > 1KB)
         if len(content) < 1024:
-            return False, f"File too small ({len(content)} bytes, expected > 1KB)"
+            return False, f"File too small ({len(content)} bytes, expected > 1KB) - May not contain YouTube cookies"
         
         # Check for Netscape format header
         if not content.startswith('# Netscape HTTP Cookie File') and \

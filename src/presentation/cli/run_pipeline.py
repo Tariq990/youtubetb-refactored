@@ -696,18 +696,24 @@ def _run_internal(
         if cookies_valid:
             console.print(f"[green]✓[/green] {cookies_msg}")
         else:
-            console.print(f"[yellow]⚠️  {cookies_msg}[/yellow]")
-            console.print("[dim]   Cookies are optional but recommended for age-restricted videos[/dim]")
+            # Check if it's just missing YouTube cookies vs completely invalid
+            if "No YouTube/Google cookies" in cookies_msg or "too small" in cookies_msg.lower():
+                console.print(f"[yellow]⚠️  No YouTube cookies found[/yellow]")
+                console.print("[dim]   Cookies are optional - only needed for age-restricted videos[/dim]")
+                console.print("[dim]   Most videos will work fine without them[/dim]")
+            else:
+                console.print(f"[yellow]⚠️  {cookies_msg}[/yellow]")
+                console.print("[dim]   Cookies are optional but recommended for age-restricted videos[/dim]")
             
             # Ask user if they want to set up cookies now
             try:
-                setup_now = input("\nDo you want to set up cookies now? (y/n): ").strip().lower()
+                setup_now = input("\n[Optional] Set up YouTube cookies now? (y/n): ").strip().lower()
                 if setup_now == 'y':
                     success = interactive_cookie_setup()
                     if not success:
-                        console.print("[yellow]⚠️  Continuing without cookies (some videos may fail)[/yellow]")
+                        console.print("[dim]   Continuing without cookies (most videos will work fine)[/dim]")
                 else:
-                    console.print("[dim]   Continuing without cookies[/dim]")
+                    console.print("[dim]   Skipping cookies setup[/dim]")
             except KeyboardInterrupt:
                 console.print("\n[dim]   Skipping cookies setup[/dim]")
     except Exception as e:
