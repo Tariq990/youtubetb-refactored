@@ -68,7 +68,13 @@ def validate_cookies_content(cookies_path: Path) -> Tuple[bool, str]:
         if len(youtube_cookies) < 3:
             return False, f"No YouTube/Google cookies found ({len(youtube_cookies)} found)"
         
-        return True, f"Valid cookies file with {len(cookie_lines)} cookies"
+        # Check for Amazon domains
+        amazon_cookies = [line for line in cookie_lines if 'amazon.com' in line]
+        
+        if len(amazon_cookies) < 3:
+            return False, f"No Amazon cookies found ({len(amazon_cookies)} found, expected at least 3)"
+        
+        return True, f"Valid cookies file with {len(cookie_lines)} cookies ({len(youtube_cookies)} YouTube, {len(amazon_cookies)} Amazon)"
         
     except Exception as e:
         return False, f"Error reading file: {e}"
@@ -115,6 +121,42 @@ def test_cookies_with_ytdlp(cookies_path: Path, test_video_url: str = "https://w
             return False, "Private video - normal behavior (cookies are OK)"
         else:
             return False, f"Error testing cookies: {e}"
+
+
+def test_amazon_cookies(cookies_path: Path) -> Tuple[bool, str]:
+    """
+    Test Amazon cookies by attempting to access Amazon.com.
+    
+    Args:
+        cookies_path: Path to cookies.txt file
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        import http.cookiejar
+        import urllib.request
+        
+        # Load cookies from Netscape format file
+        cookie_jar = http.cookiejar.MozillaCookieJar(str(cookies_path))
+        cookie_jar.load(ignore_discard=True, ignore_expires=True)
+        
+        # Create opener with cookies
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+        opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')]
+        
+        # Try to access Amazon
+        response = opener.open('https://www.amazon.com/', timeout=10)
+        html = response.read().decode('utf-8', errors='ignore')
+        
+        # Check if we're logged in (look for account indicator)
+        if 'nav-link-accountList' in html or 'Hello,' in html:
+            return True, "Amazon cookies work! Successfully authenticated"
+        else:
+            return False, "Amazon cookies present but may not be logged in"
+            
+    except Exception as e:
+        return False, f"Amazon cookies test failed: {e}"
 
 
 def print_cookie_instructions():
@@ -291,18 +333,40 @@ def check_cookies_status(verbose: bool = True) -> Tuple[bool, str]:
         return False, msg
     
     # Test with YouTube
-    success, test_msg = test_cookies_with_ytdlp(cookies_path)
+    if verbose:
+        print("[Cookies] Testing YouTube cookies...")
+    yt_success, yt_msg = test_cookies_with_ytdlp(cookies_path)
     
-    if success:
-        msg = f"Cookies OK: {cookies_path.name}"
+    if not yt_success:
+        msg = f"YouTube cookies don't work: {yt_msg}"
         if verbose:
-            print(f"[Cookies] {msg}")
-        return True, msg
-    else:
-        msg = f"Cookies don't work: {test_msg}"
-        if verbose:
-            print(f"[Cookies] {msg}")
+            print(f"[Cookies] ❌ {msg}")
         return False, msg
+    
+    if verbose:
+        print(f"[Cookies] ✓ YouTube: {yt_msg}")
+    
+    # Test with Amazon
+    if verbose:
+        print("[Cookies] Testing Amazon cookies...")
+    amazon_success, amazon_msg = test_amazon_cookies(cookies_path)
+    
+    if not amazon_success:
+        msg = f"Amazon cookies don't work: {amazon_msg}"
+        if verbose:
+            print(f"[Cookies] ⚠️  {msg}")
+            print(f"[Cookies] Note: Amazon cookies are optional but recommended for book covers")
+        # Don't fail completely if Amazon cookies don't work (they're less critical)
+        # return False, msg
+    else:
+        if verbose:
+            print(f"[Cookies] ✓ Amazon: {amazon_msg}")
+    
+    # Overall success if YouTube works (Amazon is optional)
+    msg = f"Cookies OK: {cookies_path.name}"
+    if verbose:
+        print(f"[Cookies] ✅ {msg}")
+    return True, msg
 
 
 def main():
