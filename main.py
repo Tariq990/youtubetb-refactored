@@ -10,6 +10,20 @@ import sys
 import os
 from pathlib import Path
 
+# Load environment variables early
+try:
+    from dotenv import load_dotenv
+    
+    root = Path(__file__).parent
+    # Load from root .env
+    if (root / ".env").exists():
+        load_dotenv(dotenv_path=str(root / ".env"))
+    # Load from secrets/.env (override)
+    if (root / "secrets" / ".env").exists():
+        load_dotenv(dotenv_path=str(root / "secrets" / ".env"))
+except ImportError:
+    pass  # dotenv not installed, skip
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 

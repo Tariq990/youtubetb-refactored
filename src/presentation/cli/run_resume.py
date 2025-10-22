@@ -11,10 +11,27 @@ from datetime import datetime
 from typing import Optional, List
 import argparse
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # type: ignore
+
 # Add repo root to sys.path BEFORE imports
 repo_root = Path(__file__).resolve().parents[3]  # Go up to project root (contains src/)
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
+
+# Load environment variables from .env and secrets/.env
+if load_dotenv is not None:
+    # Try loading from root .env first
+    root_env = repo_root / ".env"
+    if root_env.exists():
+        load_dotenv(dotenv_path=str(root_env))
+    
+    # Then load from secrets/.env (will override if keys exist)
+    secrets_env = repo_root / "secrets" / ".env"
+    if secrets_env.exists():
+        load_dotenv(dotenv_path=str(secrets_env))
 
 # Now import from src
 from src.infrastructure.adapters.youtube_metadata import main as youtube_metadata_main
