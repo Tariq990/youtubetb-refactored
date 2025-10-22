@@ -101,7 +101,7 @@ def test_cookies_with_ytdlp(cookies_path: Path, test_video_url: str = "https://w
             'extract_flat': True,  # Don't download, just extract info
         }
         
-        with YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(ydl_opts) as ydl:  # type: ignore
             info = ydl.extract_info(test_video_url, download=False)
             
             if info and 'title' in info:
