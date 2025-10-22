@@ -614,9 +614,8 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
                     break
         except HttpError as e:
             # Handle missing/invalid playlist (404 playlistNotFound)
-            print(f"[Sync] ❌ Sync failed: {e}")
-            print("[Sync] Details: playlist may be missing, private, or the channel ID is incorrect.")
-
+            # Don't print the ugly error - will show friendly message later
+            
             # Fallback 1: try deriving the uploads playlist id from channel id (existing heuristic)
             try:
                 if channel_id and channel_id.startswith('UC'):
@@ -657,7 +656,7 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
 
             # Fallback 2: use search.list by channelId to fetch videos directly (more robust)
             try:
-                print("[Sync] 🔁 Attempting fallback using search.list by channelId...")
+                # Silent fallback - only show results
                 next_page_token = None
                 # Reset page counter for search pages
                 search_page = 0
@@ -680,7 +679,9 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
                             'published_at': item['snippet']['publishedAt']
                         })
 
-                    print(f"[Sync]    Search page {search_page}: {len(items)} videos")
+                    # Only show count if videos found
+                    if len(items) > 0:
+                        print(f"[Sync]    Found {len(items)} videos")
 
                     next_page_token = resp.get('nextPageToken')
                     if not next_page_token:
