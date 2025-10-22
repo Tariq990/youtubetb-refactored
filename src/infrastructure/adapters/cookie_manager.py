@@ -354,15 +354,13 @@ def check_cookies_status(verbose: bool = True) -> Tuple[bool, str]:
     if not amazon_success:
         msg = f"Amazon cookies don't work: {amazon_msg}"
         if verbose:
-            print(f"[Cookies] ⚠️  {msg}")
-            print(f"[Cookies] Note: Amazon cookies are optional but recommended for book covers")
-        # Don't fail completely if Amazon cookies don't work (they're less critical)
-        # return False, msg
-    else:
-        if verbose:
-            print(f"[Cookies] ✓ Amazon: {amazon_msg}")
+            print(f"[Cookies] ❌ {msg}")
+        return False, msg
     
-    # Overall success if YouTube works (Amazon is optional)
+    if verbose:
+        print(f"[Cookies] ✓ Amazon: {amazon_msg}")
+    
+    # Overall success - both YouTube AND Amazon must work
     msg = f"Cookies OK: {cookies_path.name}"
     if verbose:
         print(f"[Cookies] ✅ {msg}")
