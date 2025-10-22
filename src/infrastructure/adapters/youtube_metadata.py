@@ -563,7 +563,7 @@ def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompt
                 if t and not t[0].isdigit() and len(t.split()) <= 3:
                     cleaned_tags.append(t)
 
-            return cleaned_tags[:20]  # Max 20 tags (was 10)
+            return cleaned_tags[:40]  # Max 40 AI tags (will be combined with basic tags and trimmed to 500 chars in upload stage)
     except Exception as e:
         print(f"[AI Tags] Error: {e}")
 

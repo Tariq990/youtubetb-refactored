@@ -8,15 +8,9 @@ import time
 import random
 import hashlib
 import sys
-import io
 from pathlib import Path
 from typing import Optional, List, Tuple
 from urllib.parse import quote
-
-# Fix Windows console encoding for Arabic text
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 
 def _get_cover_from_google_books(title: str, author: Optional[str]) -> Optional[str]:

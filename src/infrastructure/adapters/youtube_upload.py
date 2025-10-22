@@ -349,6 +349,37 @@ def upload_video(
 
     tags: List[str] = meta.get("TAGS") or []
 
+    # Ensure InkEcho is at the beginning (fixed brand tag)
+    brand_tag = "InkEcho"
+    if brand_tag not in tags:
+        tags.insert(0, brand_tag)
+    elif tags[0] != brand_tag:
+        # Remove existing InkEcho and put it at the beginning
+        tags = [tag for tag in tags if tag != brand_tag]
+        tags.insert(0, brand_tag)
+
+    # Add book title and author after InkEcho (required)
+    book_title = meta.get("main_title", "").strip()
+    author_name = meta.get("author_name", "").strip()
+    
+    # Remove existing instances to avoid duplicates (except InkEcho which is already handled)
+    if book_title in tags and book_title != brand_tag:
+        tags = [tag for tag in tags if tag != book_title]
+    if author_name in tags and author_name != brand_tag:
+        tags = [tag for tag in tags if tag != author_name]
+    
+    # Insert book title and author after InkEcho
+    insert_pos = 1  # After InkEcho
+    if book_title and book_title != brand_tag:
+        tags.insert(insert_pos, book_title)
+        insert_pos += 1
+    if author_name and author_name != brand_tag:
+        tags.insert(insert_pos, author_name)
+
+    # Convert spaces to underscores in tags (YouTube requirement)
+    tags = [tag.replace(' ', '_') for tag in tags]
+    print(f"[upload] Converted spaces to underscores in {len(tags)} tags")
+
     # Remove tags longer than 30 characters (YouTube restriction)
     filtered_tags = [tag for tag in tags if len(tag) <= 30]
     removed_tags = [tag for tag in tags if len(tag) > 30]
@@ -522,7 +553,7 @@ def upload_video(
 
                     # Update database with YouTube URL
                     try:
-                        from src.pipeline.database import update_youtube_url, update_book_short_url
+                        from .database import update_youtube_url, update_book_short_url
                         import json
 
                         # Read book metadata from titles_json

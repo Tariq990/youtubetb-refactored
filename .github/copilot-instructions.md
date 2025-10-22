@@ -65,16 +65,17 @@ if total_seconds < 900 or total_seconds > 5400:  # 15-90 min
 - Example: 18,981 word input → 2,046 word translation (89% loss!)
 
 **Book Cover Fetching** (`_get_book_cover_from_amazon`, Line 220):
-- **Primary Method**: Amazon.com scraping (English titles only)
-- **Scoring Algorithm**:
+- **Primary Method**: Google Books API (fast, reliable, no scraping)
+- **Fallback Methods**: Amazon.com scraping (English titles only) with Playwright, then requests
+- **Why Google Books First**: Much faster than browser automation, reliable API
+- **Amazon Scoring Algorithm** (if used):
   ```python
   position_score = (5 - idx) * 10  # First result = 50 points
   rating_score = rating * 10        # 4.7 stars = 47 points
   review_score = min(reviews/100, 10)  # Capped at 10
   total = position + rating + review
   ```
-- **Why Amazon**: More accurate than Gemini+Goodreads (tested extensively)
-- **Old Methods Removed**: `_get_cover_goodreads`, `_get_cover_openlibrary`, `_get_cover_googlebooks`
+- **Old Methods Removed**: `_get_cover_goodreads`, `_get_cover_openlibrary`, `_get_cover_googlebooks` (replaced with API)
 
 ### 3. TTS (`tts.py`)
 **Service**: OpenAI.fm (free TTS via Playwright scraping)
@@ -243,7 +244,7 @@ print(_get_book_cover_from_amazon('Atomic Habits', 'James Clear'))"
 1. **Cleaned `process.py`**: Removed 5 duplicate/old functions (24 → 19 functions)
 2. **Fixed search filter**: Max video length 120min → 90min (Line 194)
 3. **Fixed preflight cookies check**: `parents[2]` → `parents[3]` (Line 344)
-4. **Amazon cover scraper**: Now primary method, removed Goodreads/OpenLibrary/GoogleBooks
+4. **Book cover fetching**: Added Google Books API as primary method (fast), Amazon as fallback
 5. **Added `absl-py`**: Was missing from requirements.txt, caused import errors
 
 ## Git Workflow
@@ -280,4 +281,4 @@ python -m src.infrastructure.adapters.process "path/to/run"  # Reprocess text
 
 ---
 
-**Last Updated**: 2025-10-17 (Based on recent refactoring session)
+**Last Updated**: 2025-10-22 (Added Google Books API for faster cover fetching)
