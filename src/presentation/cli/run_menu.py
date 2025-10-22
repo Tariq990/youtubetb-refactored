@@ -617,6 +617,7 @@ def main() -> int:
                 run_render()
             elif choice == "9":
                 run_merge()
+            elif choice == "10":
                 # YouTube Metadata only (Title + Description)
                 p = Prompt.ask("Path to output.titles.json (blank = auto-detect)", default="")
                 titles_path: Optional[Path] = Path(p) if p.strip() else default_titles_json_path()
@@ -655,7 +656,7 @@ def main() -> int:
                         sel = options[int(ch) - 1]
                         thumbnail_script = repo_root() / "src" / "infrastructure" / "adapters" / "thumbnail.py"
                         subprocess.run([py(), str(thumbnail_script), "--run", str(sel)], cwd=repo_root())
-            elif choice == "11":
+            elif choice == "12":
                 # Upload to YouTube
                 base = runs_dir()
                 if not base.exists():
@@ -692,7 +693,7 @@ def main() -> int:
                         if use_thumb.lower() == "y":
                             cmd.append("--thumbnail")
                         subprocess.run(cmd, cwd=repo_root())
-            elif choice == "12":
+            elif choice == "13":
                 # Resume from last successful stage
                 base = runs_dir()
                 if not base.exists():
