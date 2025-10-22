@@ -96,6 +96,20 @@ python main.py
 4. **YouTube OAuth** (للرفع)
    - ملف `client_secrets.json` من Google Cloud Console
 
+### 🍪 Cookies Setup (مطلوب):
+
+**لماذا Cookies؟**
+- لتحميل فيديوهات محظورة بالعمر (age-restricted)
+- لجلب أغلفة الكتب من Amazon
+
+**الطريقة:**
+1. ثبّت Extension: [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+2. سجّل دخول على YouTube و Amazon
+3. صدّر cookies من كل موقع
+4. ادمج الملفين في `secrets/cookies.txt`
+
+**📖 دليل مفصّل: [docs/COOKIES_SETUP.md](docs/COOKIES_SETUP.md)**
+
 ---
 
 ## 📖 الاستخدام

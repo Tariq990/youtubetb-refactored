@@ -686,8 +686,8 @@ def _run_internal(
     # Preflight: internet, dependencies, keys. Retry until everything is ready, logging into combined log.
     _preflight_check(d["root"], config_dir, combined_log=combined_log)
 
-    # 🍪 COOKIES CHECK: Test cookies before starting (optional but recommended)
-    console.print("\n[bold cyan]🍪 Cookies Check[/bold cyan]")
+    # 🍪 COOKIES CHECK: CRITICAL - Required for transcribe and process stages
+    console.print("\n[bold cyan]🍪 Cookies Check (Required)[/bold cyan]")
     try:
         from src.infrastructure.adapters.cookie_manager import check_cookies_status, interactive_cookie_setup
         
@@ -696,29 +696,48 @@ def _run_internal(
         if cookies_valid:
             console.print(f"[green]✓[/green] {cookies_msg}")
         else:
-            # Check if it's just missing YouTube cookies vs completely invalid
-            if "No YouTube/Google cookies" in cookies_msg or "too small" in cookies_msg.lower():
-                console.print(f"[yellow]⚠️  No YouTube cookies found[/yellow]")
-                console.print("[dim]   Cookies are optional - only needed for age-restricted videos[/dim]")
-                console.print("[dim]   Most videos will work fine without them[/dim]")
-            else:
-                console.print(f"[yellow]⚠️  {cookies_msg}[/yellow]")
-                console.print("[dim]   Cookies are optional but recommended for age-restricted videos[/dim]")
+            # Cookies are REQUIRED - transcribe.py and process.py depend on them
+            console.print(f"[bold red]❌ CRITICAL: {cookies_msg}[/bold red]")
+            console.print("[yellow]⚠️  Cookies are REQUIRED for pipeline to work correctly:[/yellow]")
+            console.print("[dim]   - Transcribe stage: Downloads video/audio with yt-dlp[/dim]")
+            console.print("[dim]   - Process stage: Fetches book cover from Amazon[/dim]")
+            console.print("[dim]   Without valid cookies, these stages will fail![/dim]")
             
-            # Ask user if they want to set up cookies now
+            # Force user to set up cookies now
+            console.print("\n[bold cyan]You must set up YouTube + Amazon cookies to continue.[/bold cyan]")
+            console.print("[dim]📖 Full guide: docs/COOKIES_SETUP.md[/dim]")
             try:
-                setup_now = input("\n[Optional] Set up YouTube cookies now? (y/n): ").strip().lower()
+                setup_now = input("Set up cookies now? (y/n): ").strip().lower()
                 if setup_now == 'y':
                     success = interactive_cookie_setup()
                     if not success:
-                        console.print("[dim]   Continuing without cookies (most videos will work fine)[/dim]")
+                        console.print("\n[bold red]❌ Cookie setup failed![/bold red]")
+                        console.print("[yellow]Pipeline cannot continue without valid cookies.[/yellow]")
+                        console.print("[dim]Read guide: docs/COOKIES_SETUP.md[/dim]")
+                        sys.exit(1)
+                    # Re-check after setup
+                    cookies_valid, cookies_msg = check_cookies_status(verbose=False)
+                    if not cookies_valid:
+                        console.print(f"\n[bold red]❌ Cookies still invalid: {cookies_msg}[/bold red]")
+                        console.print("[yellow]Pipeline cannot continue.[/yellow]")
+                        sys.exit(1)
+                    console.print(f"[green]✓[/green] Cookies validated successfully!")
                 else:
-                    console.print("[dim]   Skipping cookies setup[/dim]")
+                    console.print("\n[bold red]❌ Pipeline cancelled by user[/bold red]")
+                    console.print("[yellow]Cookies are required to continue.[/yellow]")
+                    sys.exit(1)
             except KeyboardInterrupt:
-                console.print("\n[dim]   Skipping cookies setup[/dim]")
+                console.print("\n\n[bold red]❌ Pipeline cancelled[/bold red]")
+                sys.exit(1)
     except Exception as e:
-        console.print(f"[yellow]⚠️  Cookies check failed: {e}[/yellow]")
-        console.print("[dim]   Continuing without cookies validation[/dim]")
+        console.print(f"[bold red]❌ Cookie check error: {e}[/bold red]")
+        console.print("[yellow]Cannot verify cookies - pipeline may fail.[/yellow]")
+        try:
+            cont = input("Continue anyway? (yes/no): ").strip().lower()
+            if cont != 'yes':
+                sys.exit(1)
+        except KeyboardInterrupt:
+            sys.exit(1)
     
     # 🔄 YOUTUBE SYNC: Ensure database.json is up-to-date (syncs from YouTube if empty)
     console.print("\n[bold cyan]🔄 Database Sync Check[/bold cyan]")

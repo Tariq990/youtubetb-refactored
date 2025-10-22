@@ -14,7 +14,7 @@ This folder contains **encrypted** versions of sensitive files (API keys, tokens
 |----------------|---------------|-------------|
 | `api_key.txt.enc` | `secrets/api_key.txt` | Gemini API key |
 | `client_secret.json.enc` | `secrets/client_secret.json` | YouTube OAuth client |
-| `cookies.txt.enc` | `secrets/cookies.txt` | YouTube cookies |
+| `cookies.txt.enc` | `secrets/cookies.txt` | YouTube + Amazon cookies (merged) |
 | `token.json.enc` | `secrets/token.json` | YouTube access token |
 
 ## 🚀 Usage

@@ -6,6 +6,8 @@ api_key.txt
 client_secret.json
 token.json
 cookies.txt
+*_cookies.txt
+www.*.txt
 
 # Encrypted secrets (SAFE TO COMMIT!)
 # secrets_encrypted/ is ALLOWED - it contains password-protected files
