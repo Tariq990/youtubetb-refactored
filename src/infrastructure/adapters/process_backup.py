@@ -581,9 +581,8 @@ def _get_cover_googlebooks(title: str, author: Optional[str]) -> Optional[str]:
 
 def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[str]:
     """
-    البحث عن غلاف الكتاب باستخدام Amazon.
+    البحث عن غلاف الكتاب من مصادر متعددة.
     يبحث باسم الكتاب + اسم الكاتب (إنجليزي فقط).
-    يختار الطبعة الأعلى تقييماً.
     
     Args:
         title: Book title (English)
@@ -598,26 +597,41 @@ def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[s
     else:
         print(f"[Cover] البحث عن غلاف: {title}")
 
-    # Try new amazon_cover module first (with Playwright)
+    # Try multi-source fetcher first (Google Books, Open Library, etc.)
+    try:
+        from .book_cover_fetcher import get_book_cover_multi_source
+        print("[Cover] محاولة المصادر المجانية (Google Books, Open Library, Goodreads)...")
+        url = get_book_cover_multi_source(title, author)
+        if url:
+            print(f"[Cover] ✅ تم العثور على الغلاف من المصادر المجانية")
+            return url
+    except ImportError:
+        print("[Cover] تحذير: book_cover_fetcher غير متاح")
+    except Exception as e:
+        print(f"[Cover] خطأ في المصادر المجانية: {e}")
+
+    # Try Amazon with Playwright
     try:
         from .amazon_cover import get_book_cover_from_amazon
+        print("[Cover] محاولة Amazon (Playwright)...")
         url = get_book_cover_from_amazon(title, author, use_playwright=True)
         if url:
             print(f"[Cover] ✅ تم العثور على الغلاف من Amazon (Playwright)")
             return url
     except ImportError:
-        print("[Cover] Warning: amazon_cover module not available, using fallback")
+        print("[Cover] Warning: amazon_cover module not available")
     except Exception as e:
-        print(f"[Cover] amazon_cover error: {e}, trying fallback")
+        print(f"[Cover] amazon_cover error: {e}")
     
-    # Fallback to old method
+    # Fallback to old Amazon method
+    print("[Cover] محاولة Amazon (fallback)...")
     url = _get_book_cover_from_amazon(title, author)
     
     if url:
         print(f"[Cover] ✅ تم العثور على الغلاف من Amazon (fallback)")
         return url
     
-    print("[Cover] ❌ لم يتم العثور على غلاف")
+    print("[Cover] ❌ لم يتم العثور على غلاف من جميع المصادر")
     return None
 
 

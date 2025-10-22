@@ -348,9 +348,8 @@ def _get_book_cover_from_amazon_fallback(title: str, author: Optional[str]) -> O
 
 def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[str]:
     """
-    البحث عن غلاف الكتاب باستخدام Amazon.
+    البحث عن غلاف الكتاب من مصادر متعددة.
     يبحث باسم الكتاب + اسم الكاتب (إنجليزي فقط).
-    يختار الطبعة الأعلى تقييماً.
     
     Args:
         title: Book title (English)
@@ -365,14 +364,28 @@ def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[s
     else:
         print(f"[Cover] البحث عن غلاف: {title}")
 
-    # استخدام Amazon للبحث
+    # Try multi-source fetcher first (Google Books, Open Library, etc.)
+    try:
+        from .book_cover_fetcher import get_book_cover_multi_source
+        print("[Cover] محاولة المصادر المجانية (Google Books, Open Library, Goodreads)...")
+        url = get_book_cover_multi_source(title, author)
+        if url:
+            print(f"[Cover] ✅ تم العثور على الغلاف من المصادر المجانية")
+            return url
+    except ImportError:
+        print("[Cover] تحذير: book_cover_fetcher غير متاح")
+    except Exception as e:
+        print(f"[Cover] خطأ في المصادر المجانية: {e}")
+    
+    # Fallback to Amazon (kept for compatibility but often blocked)
+    print("[Cover] محاولة Amazon كخيار احتياطي...")
     url = _get_book_cover_from_amazon(title, author)
     
     if url:
         print(f"[Cover] ✅ تم العثور على الغلاف من Amazon")
         return url
     
-    print("[Cover] ❌ لم يتم العثور على غلاف")
+    print("[Cover] ❌ لم يتم العثور على غلاف من جميع المصادر")
     return None
 
 
