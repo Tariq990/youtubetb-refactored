@@ -590,6 +590,7 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
 
         from googleapiclient.errors import HttpError
         try:
+            # Primary approach: use the uploads playlist
             while True:
                 page_num += 1
                 response = youtube.playlistItems().list(
@@ -613,10 +614,10 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
                     break
         except HttpError as e:
             # Handle missing/invalid playlist (404 playlistNotFound)
-            err_content = getattr(e, 'error_details', None) or str(e)
             print(f"[Sync] ❌ Sync failed: {e}")
             print("[Sync] Details: playlist may be missing, private, or the channel ID is incorrect.")
-            # Try a simple fallback: if uploads_playlist_id looks like 'UU...'(uploads), attempt to derive from channel id
+
+            # Fallback 1: try deriving the uploads playlist id from channel id (existing heuristic)
             try:
                 if channel_id and channel_id.startswith('UC'):
                     derived_uploads = 'UU' + channel_id[2:]
@@ -625,37 +626,81 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
                         uploads_playlist_id = derived_uploads
                         # Try a single page to validate
                         resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=5).execute()
-                        if not resp.get('items'):
-                            print("[Sync] ❌ Fallback playlist also returned no items")
-                            return False
-                        # Otherwise, continue with normal pagination using new id
-                        next_page_token = resp.get('nextPageToken')
-                        for item in resp.get('items', []):
-                            videos.append({
-                                'title': item['snippet']['title'],
-                                'video_id': item['snippet']['resourceId']['videoId'],
-                                'published_at': item['snippet']['publishedAt']
-                            })
-                        print(f"[Sync]    Fallback seed: {len(resp.get('items', []))} videos")
-                        # continue paginating using uploads_playlist_id
-                        while True:
-                            page_num += 1
-                            resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=50, pageToken=next_page_token).execute()
+                        if resp.get('items'):
+                            next_page_token = resp.get('nextPageToken')
                             for item in resp.get('items', []):
                                 videos.append({
                                     'title': item['snippet']['title'],
                                     'video_id': item['snippet']['resourceId']['videoId'],
                                     'published_at': item['snippet']['publishedAt']
                                 })
-                            print(f"[Sync]    Page {page_num}: {len(resp.get('items', []))} videos")
-                            next_page_token = resp.get('nextPageToken')
-                            if not next_page_token:
-                                break
-                    else:
-                        return False
+                            print(f"[Sync]    Fallback seed: {len(resp.get('items', []))} videos")
+                            # continue paginating using uploads_playlist_id
+                            while True:
+                                page_num += 1
+                                resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=50, pageToken=next_page_token).execute()
+                                for item in resp.get('items', []):
+                                    videos.append({
+                                        'title': item['snippet']['title'],
+                                        'video_id': item['snippet']['resourceId']['videoId'],
+                                        'published_at': item['snippet']['publishedAt']
+                                    })
+                                print(f"[Sync]    Page {page_num}: {len(resp.get('items', []))} videos")
+                                next_page_token = resp.get('nextPageToken')
+                                if not next_page_token:
+                                    break
+                        else:
+                            print("[Sync] ❌ Fallback playlist also returned no items")
+                    # If derived uploads is same or no items, fall through to search-based fallback
             except Exception as fallback_err:
                 print(f"[Sync] ❌ Fallback attempt failed: {fallback_err}")
+
+            # Fallback 2: use search.list by channelId to fetch videos directly (more robust)
+            try:
+                print("[Sync] 🔁 Attempting fallback using search.list by channelId...")
+                next_page_token = None
+                # Reset page counter for search pages
+                search_page = 0
+                while True:
+                    search_page += 1
+                    resp = youtube.search().list(
+                        part='snippet',
+                        channelId=channel_id,
+                        maxResults=50,
+                        order='date',
+                        pageToken=next_page_token,
+                        type='video'
+                    ).execute()
+
+                    items = resp.get('items', [])
+                    for item in items:
+                        videos.append({
+                            'title': item['snippet']['title'],
+                            'video_id': item['id']['videoId'],
+                            'published_at': item['snippet']['publishedAt']
+                        })
+
+                    print(f"[Sync]    Search page {search_page}: {len(items)} videos")
+
+                    next_page_token = resp.get('nextPageToken')
+                    if not next_page_token:
+                        break
+
+                if not videos:
+                    print("[Sync] ⚠️  Channel has no public videos yet")
+                    print("[Sync]    This is normal for new channels")
+                    print("[Sync]    Database will remain empty until first video is uploaded")
+                    return False
+            except Exception as search_err:
+                print(f"[Sync] ❌ Search-based fallback failed: {search_err}")
                 return False
+        
+        # Check if any videos were found
+        if not videos:
+            print("[Sync] ⚠️  No videos found on channel")
+            print("[Sync]    Channel may be new or all videos are private/unlisted")
+            print("[Sync]    Database will remain empty - this is OK for new channels")
+            return False
         
         print(f"[Sync] ✅ Found {len(videos)} total videos\n")
         
