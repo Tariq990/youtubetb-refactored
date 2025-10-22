@@ -314,9 +314,9 @@ def run_youtube_sync():
             else:
                 console.print(f"[dim]No new books found (database was up to date)[/dim]")
         else:
-            console.print(f"\n[bold red]❌ Sync failed![/bold red]")
-            console.print(f"[yellow]Check your YouTube channel ID in config/settings.json[/yellow]")
-            console.print(f"[yellow]and ensure secrets/api_key.txt has a valid API key.[/yellow]")
+            console.print(f"\n[yellow]⚠️  YouTube channel has no videos yet[/yellow]")
+            console.print(f"[dim]This is normal for new channels.[/dim]")
+            console.print(f"[dim]Sync will work automatically after uploading your first video.[/dim]")
     
     except ImportError as e:
         console.print(f"[red]❌ Error: Could not load database module[/red]")

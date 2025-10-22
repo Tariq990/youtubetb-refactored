@@ -71,8 +71,9 @@ def _ensure_database_synced() -> bool:
             console.print("[dim]   Duplicate detection is now active.[/dim]\n")
             return True
         else:
-            console.print("[yellow]⚠️  Sync failed. Proceeding with empty database.[/yellow]")
-            console.print("[dim]   (Duplicates won't be detected until next sync)[/dim]\n")
+            console.print("[yellow]⚠️  YouTube channel has no videos yet.[/yellow]")
+            console.print("[dim]   This is normal for new channels.[/dim]")
+            console.print("[dim]   Proceeding with empty database (duplicates won't be detected).[/dim]\n")
             return False
     except Exception as e:
         console.print(f"[yellow]⚠️  Sync error: {e}[/yellow]")
