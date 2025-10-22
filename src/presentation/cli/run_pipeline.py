@@ -39,6 +39,47 @@ console = Console()
 MAX_RETRIES_PER_STAGE = 10
 
 
+def _ensure_database_synced() -> bool:
+    """
+    Ensure database.json is synced with YouTube channel.
+    If database is empty, attempts to sync from YouTube automatically.
+    
+    Returns:
+        True if database has data (local or synced), False otherwise
+    """
+    from src.infrastructure.adapters.database import (
+        _load_database, 
+        sync_database_from_youtube
+    )
+    
+    db = _load_database()
+    
+    # If database has books, we're good
+    if db.get("books"):
+        console.print("[dim]✓ Using local database[/dim]")
+        return True
+    
+    # Database is empty - attempt YouTube sync
+    console.print("\n[yellow]⚠️  Local database is empty![/yellow]")
+    console.print("[cyan]   Attempting to sync from YouTube channel...[/cyan]")
+    
+    try:
+        synced = sync_database_from_youtube()
+        
+        if synced:
+            console.print("[green]✅ Database synced from YouTube successfully![/green]")
+            console.print("[dim]   Duplicate detection is now active.[/dim]\n")
+            return True
+        else:
+            console.print("[yellow]⚠️  Sync failed. Proceeding with empty database.[/yellow]")
+            console.print("[dim]   (Duplicates won't be detected until next sync)[/dim]\n")
+            return False
+    except Exception as e:
+        console.print(f"[yellow]⚠️  Sync error: {e}[/yellow]")
+        console.print("[dim]   Proceeding with empty database.[/dim]\n")
+        return False
+
+
 def _save_summary(run_dir: Path, summary: dict) -> None:
     """
     Save summary.json to run directory.
@@ -603,15 +644,17 @@ def _run_internal(
 
     # 🔒 CRITICAL: Validate all APIs before starting pipeline
     if not skip_api_check:
-        console.print("\n[bold cyan]🔐 Step 0: API Validation[/bold cyan]")
+        console.print("\n", end="")  # Just a newline
         if not validate_apis_before_run():
-            console.print("\n[bold red]❌ PIPELINE ABORTED: API validation failed![/bold red]")
-            console.print("[yellow]Fix the API issues above and try again.[/yellow]")
-            console.print("[dim]Hint: Check your secrets/.env file and API console quotas[/dim]\n")
+            console.print("\n[bold red]❌ System validation failed![/bold red]")
+            console.print("[yellow]Fix the issues and try again.[/yellow]")
+            console.print("[dim]Hint: Run Option 0 for detailed diagnostics[/dim]\n")
             raise typer.Exit(code=1)
-        console.print("[green]✅ All APIs validated successfully![/green]\n")
     else:
-        console.print("[yellow]⚠️ WARNING: API validation skipped (--skip-api-check)[/yellow]\n")
+        console.print("[yellow]⚠️ Skipping validation (--skip-api-check)[/yellow]\n")
+    
+    # 📊 CRITICAL: Ensure database is synced (auto-sync from YouTube if empty)
+    _ensure_database_synced()
 
     # Cleanup orphaned/empty run folders before starting new pipeline
     try:

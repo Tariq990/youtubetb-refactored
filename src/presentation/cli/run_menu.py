@@ -143,7 +143,9 @@ def header() -> None:
     t.add_row("11", "Generate Thumbnail only")
     t.add_row("12", "Upload to YouTube (requires secrets/client_secret.json)")
     t.add_row("13", "Resume pipeline from last successful stage")
-    t.add_row("14", "Exit")
+    t.add_row("14", "🔄 Sync Database from YouTube Channel")
+    t.add_row("15", "🗑️ Clean Up (Delete runs, tmp, database, pexels)")
+    t.add_row("16", "Exit")
     console.print(t)
 
 
@@ -177,6 +179,151 @@ def run_api_check():
     except Exception as e:
         console.print(f"[red]❌ Error running API checks: {e}[/red]")
 
+    pause()
+
+
+def run_cleanup():
+    """Clean up runs, tmp, database, and pexels data"""
+    console.clear()
+    console.rule("[bold red]🗑️ Clean Up System Files")
+    
+    console.print("[yellow]⚠️  WARNING: This will delete:[/yellow]")
+    console.print("   • [red]runs/[/red] - All processed videos and outputs")
+    console.print("   • [red]tmp/[/red] - Temporary files")
+    console.print("   • [red]src/database.json[/red] - Local database (can resync from YouTube)")
+    console.print("   • [red]used_pexels_videos.json[/red] - Pexels video tracking")
+    console.print("\n[dim]Note: This will NOT delete secrets/ or config/[/dim]\n")
+    
+    confirm = Prompt.ask(
+        "Are you sure you want to delete all these files?",
+        choices=["yes", "no"],
+        default="no"
+    )
+    
+    if confirm.lower() != "yes":
+        console.print("[yellow]Cleanup canceled.[/yellow]")
+        return
+    
+    import shutil
+    import os
+    
+    deleted = []
+    errors = []
+    
+    # List of items to delete
+    items_to_delete = [
+        ("runs/", "directory"),
+        ("tmp/", "directory"),
+        ("src/database.json", "file"),
+        ("used_pexels_videos.json", "file")
+    ]
+    
+    console.print("\n[cyan]Starting cleanup...[/cyan]\n")
+    
+    for item_path, item_type in items_to_delete:
+        full_path = repo_root() / item_path
+        
+        try:
+            if item_type == "directory" and full_path.exists():
+                # Delete directory
+                shutil.rmtree(full_path)
+                size = "directory"
+                console.print(f"[green]✓[/green] Deleted {item_path}")
+                deleted.append(item_path)
+                
+            elif item_type == "file" and full_path.exists():
+                # Delete file
+                file_size = full_path.stat().st_size
+                full_path.unlink()
+                size_kb = file_size / 1024
+                console.print(f"[green]✓[/green] Deleted {item_path} ({size_kb:.1f} KB)")
+                deleted.append(item_path)
+                
+            else:
+                console.print(f"[dim]○[/dim] {item_path} (not found)")
+                
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to delete {item_path}: {e}")
+            errors.append((item_path, str(e)))
+    
+    # Summary
+    console.print("\n" + "="*60)
+    if deleted:
+        console.print(f"[green]✅ Successfully deleted {len(deleted)} items:[/green]")
+        for item in deleted:
+            console.print(f"   • {item}")
+    
+    if errors:
+        console.print(f"\n[red]❌ Failed to delete {len(errors)} items:[/red]")
+        for item, error in errors:
+            console.print(f"   • {item}: {error}")
+    
+    if not deleted and not errors:
+        console.print("[yellow]No files found to delete.[/yellow]")
+    
+    console.print("="*60)
+    
+    if deleted:
+        console.print("\n[cyan]💡 Tip: Database can be restored by running:[/cyan]")
+        console.print("   [dim]Option 14: Sync Database from YouTube Channel[/dim]")
+    
+    pause()
+
+
+def run_youtube_sync():
+    """Manually sync database from YouTube channel"""
+    console.clear()
+    console.rule("[bold cyan]🔄 Sync Database from YouTube")
+    
+    console.print("[dim]This will sync your local database with videos from your YouTube channel.[/dim]")
+    console.print("[dim]Use this to detect duplicates after uploading from another device.[/dim]\n")
+    
+    try:
+        from src.infrastructure.adapters.database import sync_database_from_youtube, _load_database
+        
+        # Show current database status
+        db = _load_database()
+        current_count = len(db.get("books", []))
+        console.print(f"[cyan]Current database:[/cyan] {current_count} books\n")
+        
+        # Confirm sync
+        if current_count > 0:
+            confirm = Prompt.ask(
+                "Database already has data. Sync will add missing books from YouTube. Continue?",
+                choices=["y", "n"],
+                default="y"
+            )
+            if confirm.lower() != "y":
+                console.print("[yellow]Sync canceled.[/yellow]")
+                return
+        
+        console.print("\n[cyan]Syncing from YouTube channel...[/cyan]")
+        
+        success = sync_database_from_youtube()
+        
+        if success:
+            # Show new count
+            db_after = _load_database()
+            new_count = len(db_after.get("books", []))
+            added = new_count - current_count
+            
+            console.print(f"\n[bold green]✅ Sync completed successfully![/bold green]")
+            console.print(f"[cyan]Total books in database:[/cyan] {new_count}")
+            if added > 0:
+                console.print(f"[green]Books added from YouTube:[/green] {added}")
+            else:
+                console.print(f"[dim]No new books found (database was up to date)[/dim]")
+        else:
+            console.print(f"\n[bold red]❌ Sync failed![/bold red]")
+            console.print(f"[yellow]Check your YouTube channel ID in config/settings.json[/yellow]")
+            console.print(f"[yellow]and ensure secrets/api_key.txt has a valid API key.[/yellow]")
+    
+    except ImportError as e:
+        console.print(f"[red]❌ Error: Could not load database module[/red]")
+        console.print(f"[yellow]Details: {e}[/yellow]")
+    except Exception as e:
+        console.print(f"[red]❌ Error during sync: {e}[/red]")
+    
     pause()
 
 
@@ -594,7 +741,7 @@ def main() -> int:
     while True:
         console.clear()
         header()
-        choice = Prompt.ask("Choose", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"], default="1")
+        choice = Prompt.ask("Choose", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"], default="1")
         console.rule(style="dim")
         try:
             if choice == "0":
@@ -726,6 +873,10 @@ def main() -> int:
                         resume_script = repo_root() / "src" / "presentation" / "cli" / "run_resume.py"
                         subprocess.run([py(), str(resume_script), "--run", str(sel), "--privacy", priv], cwd=repo_root())
             elif choice == "14":
+                run_youtube_sync()
+            elif choice == "15":
+                run_cleanup()
+            elif choice == "16":
                 console.print("[bold yellow]Goodbye![/bold yellow]")
                 return 0
         except KeyboardInterrupt:

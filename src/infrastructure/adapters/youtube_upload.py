@@ -349,72 +349,115 @@ def upload_video(
 
     tags: List[str] = meta.get("TAGS") or []
 
-    # Ensure InkEcho is at the beginning (fixed brand tag)
+    # === FIXED TAGS (ALWAYS FIRST) ===
     brand_tag = "InkEcho"
-    if brand_tag not in tags:
-        tags.insert(0, brand_tag)
-    elif tags[0] != brand_tag:
-        # Remove existing InkEcho and put it at the beginning
-        tags = [tag for tag in tags if tag != brand_tag]
-        tags.insert(0, brand_tag)
-
-    # Add book title and author after InkEcho (required)
     book_title = meta.get("main_title", "").strip()
     author_name = meta.get("author_name", "").strip()
     
-    # Remove existing instances to avoid duplicates (except InkEcho which is already handled)
-    if book_title in tags and book_title != brand_tag:
-        tags = [tag for tag in tags if tag != book_title]
-    if author_name in tags and author_name != brand_tag:
-        tags = [tag for tag in tags if tag != author_name]
+    # Convert fixed tags to underscore format (no spaces)
+    fixed_tags = []
+    if brand_tag:
+        fixed_tags.append(brand_tag)
+    if book_title:
+        fixed_tags.append(book_title.replace(" ", "_"))
+    if author_name:
+        author_name_underscore = author_name.replace(" ", "_")
+        if author_name_underscore not in fixed_tags:
+            fixed_tags.append(author_name_underscore)
     
-    # Insert book title and author after InkEcho
-    insert_pos = 1  # After InkEcho
-    if book_title and book_title != brand_tag:
-        tags.insert(insert_pos, book_title)
-        insert_pos += 1
-    if author_name and author_name != brand_tag:
-        tags.insert(insert_pos, author_name)
-
-    # Convert spaces to underscores in tags (YouTube requirement)
-    tags = [tag.replace(' ', '_') for tag in tags]
-    print(f"[upload] Converted spaces to underscores in {len(tags)} tags")
-
-    # Remove tags longer than 30 characters (YouTube restriction)
-    filtered_tags = [tag for tag in tags if len(tag) <= 30]
-    removed_tags = [tag for tag in tags if len(tag) > 30]
-    if removed_tags:
-        print(f"[upload] Removed {len(removed_tags)} tags longer than 30 chars:")
-        for tag in removed_tags:
-            print(f"  - {tag} ({len(tag)} chars)")
-    tags = filtered_tags
-
-    # Clean tags: YouTube limits total to 500 chars
+    print(f"[upload] Fixed tags (always first): {fixed_tags}")
+    
+    # === PROCESS EXISTING TAGS ===
+    # Remove duplicates of fixed tags from the dynamic tags (case-insensitive)
+    fixed_tags_lower = {ft.lower() for ft in fixed_tags}
+    tags = [tag for tag in tags if tag.lower() not in fixed_tags_lower]
+    
+    # Convert spaces to underscores in all tags
+    tags = [tag.replace(" ", "_") for tag in tags]
+    print(f"[upload] Converted spaces to underscores in {len(tags)} dynamic tags")
+    
+    # === REMOVE PROBLEMATIC TAGS ===
+    BLOCKED_PATTERNS = {
+        "subscribe", "link", "playlist", "watch", "channel", "bell", 
+        "notification", "unsubscribe", "click", "like", "comment",
+        "full_audiobook"  # Specific blocked: full audiobook
+    }
+    
+    # Filter problematic tags
+    cleaned_tags = []
+    for tag in tags:
+        tag_lower = tag.lower()
+        
+        # Skip if it's a blocked pattern
+        if any(blocked in tag_lower for blocked in BLOCKED_PATTERNS):
+            print(f"[upload]   ❌ Blocked: {tag}")
+            continue
+        
+        # Skip if tag is too long (>30 chars)
+        if len(tag) > 30:
+            print(f"[upload]   ⚠️  Too long ({len(tag)} chars): {tag}")
+            continue
+        
+        cleaned_tags.append(tag)
+    
+    tags = cleaned_tags
+    print(f"[upload] After filtering: {len(tags)} tags remain")
+    
+    # === REMOVE DUPLICATES (case-insensitive) ===
+    seen = {ft.lower() for ft in fixed_tags}  # Start with fixed tags
+    unique_tags = []
+    for tag in tags:
+        tag_lower = tag.lower()
+        if tag_lower not in seen:
+            seen.add(tag_lower)
+            unique_tags.append(tag)
+    tags = unique_tags
+    print(f"[upload] After dedup: {len(tags)} unique tags")
+    
+    # === CALCULATE CHARACTER LIMIT ===
     def calc_total_chars(tag_list):
+        """Calculate total characters including commas"""
         if not tag_list:
             return 0
-        return sum(len(tag) for tag in tag_list) + (len(tag_list) - 1)
-
-    initial_total = calc_total_chars(tags)
-    initial_count = len(tags)
-
-    if initial_total > 500:
-        print(f"⚠️  Tags total ({initial_total} chars) exceeds 500 limit")
-        print(f"🔧 Removing longest tags one by one...")
-        sorted_tags = sorted(tags, key=len, reverse=True)
-        removed = []
-        while calc_total_chars(sorted_tags) > 500 and sorted_tags:
-            removed_tag = sorted_tags.pop(0)
-            removed.append(removed_tag)
-            current_total = calc_total_chars(sorted_tags)
-            print(f"  ❌ Removed: {removed_tag} ({len(removed_tag)} chars) → Total now: {current_total}")
-        tags = sorted_tags
-        final_total = calc_total_chars(tags)
-        print(f"✅ Final: {len(tags)} tags ({final_total} chars) - Removed {len(removed)} tags")
-    else:
-        print(f"✅ Tags OK: {initial_count} tags ({initial_total} chars / 500)")
-
-    print(f"[upload] Final tags to be sent: {tags}")
+        return sum(len(tag) for tag in tag_list) + (len(tag_list) - 1)  # -1: no comma after last
+    
+    # === BUILD FINAL TAG LIST ===
+    final_tags = fixed_tags.copy()
+    
+    # Always add audiobook and book_summary (encouraged keywords)
+    if not any(t.lower() == "audiobook" for t in final_tags):
+        final_tags.append("audiobook")
+    if not any(t.lower() == "book_summary" for t in final_tags):
+        final_tags.append("book_summary")
+    
+    reserved_chars = calc_total_chars(final_tags)
+    available_chars = 500 - reserved_chars
+    
+    print(f"[upload] Reserved chars (fixed + audiobook + book_summary): {reserved_chars}")
+    print(f"[upload] Available space for dynamic tags: {available_chars} chars")
+    
+    # === FILL REMAINING SPACE WITH DYNAMIC TAGS ===
+    added_count = 0
+    for tag in tags:
+        test_total = calc_total_chars(final_tags + [tag])
+        
+        if test_total <= 500:
+            final_tags.append(tag)
+            added_count += 1
+        else:
+            remaining_space = 500 - calc_total_chars(final_tags)
+            if remaining_space < 5:  # Less than 5 chars left, stop trying
+                break
+    
+    final_total = calc_total_chars(final_tags)
+    efficiency = (final_total / 500) * 100
+    
+    print(f"✅ Final tags: {len(final_tags)} total ({added_count} dynamic + {len(fixed_tags)+2} fixed)")
+    print(f"✅ Total characters: {final_total} / 500 ({efficiency:.1f}% efficiency)")
+    print(f"✅ Preview (first 10): {', '.join(final_tags[:10])}")
+    
+    # Use final tags
+    tags = final_tags
 
     if not title:
         if debug:

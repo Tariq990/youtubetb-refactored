@@ -11,7 +11,19 @@ from typing import Dict, List, Tuple
 from rich.console import Console
 from rich.table import Table
 import requests
-import google.generativeai as genai  # type: ignore
+
+# Suppress Google API warnings (STDERR noise from absl and grpc)
+import warnings
+warnings.filterwarnings('ignore')
+
+# Redirect STDERR temporarily during import to suppress Google warnings
+_original_stderr = sys.stderr
+try:
+    sys.stderr = open(os.devnull, 'w')
+    import google.generativeai as genai  # type: ignore
+finally:
+    sys.stderr.close()
+    sys.stderr = _original_stderr
 
 console = Console()
 
@@ -19,8 +31,9 @@ console = Console()
 class APIValidator:
     """Comprehensive validation of all pipeline requirements"""
 
-    def __init__(self):
+    def __init__(self, quiet: bool = False):
         self.results: Dict[str, Tuple[bool, str]] = {}
+        self.quiet = quiet  # Quiet mode for minimal output
         self._load_env()
 
     def _load_env(self):
@@ -339,11 +352,14 @@ class APIValidator:
         Returns:
             bool: True if all critical checks pass
         """
-        console.print("\n[bold cyan]🔍 Comprehensive Pipeline Validation[/bold cyan]")
-        console.print("[dim]Checking system tools, packages, files, and API keys...[/dim]\n")
+        # Only show headers if not in quiet mode
+        if not self.quiet:
+            console.print("\n[bold cyan]🔍 Comprehensive Pipeline Validation[/bold cyan]")
+            console.print("[dim]Checking system tools, packages, files, and API keys...[/dim]\n")
 
         # ========== SECTION 1: SYSTEM TOOLS ==========
-        console.print("[bold yellow]📦 System Tools[/bold yellow]")
+        if not self.quiet:
+            console.print("[bold yellow]📦 System Tools[/bold yellow]")
         system_tools = {
             'FFmpeg': self.validate_ffmpeg,
             'Playwright': self.validate_playwright,
@@ -355,12 +371,14 @@ class APIValidator:
             self.results[tool_name] = (success, message)
 
         # ========== SECTION 2: PYTHON PACKAGES ==========
-        console.print("\n[bold yellow]🐍 Python Packages[/bold yellow]")
+        if not self.quiet:
+            console.print("\n[bold yellow]🐍 Python Packages[/bold yellow]")
         success, message = self.validate_required_packages()
         self.results['Required Packages'] = (success, message)
 
         # ========== SECTION 3: FILES & SECRETS ==========
-        console.print("\n[bold yellow]📁 Files & Configuration[/bold yellow]")
+        if not self.quiet:
+            console.print("\n[bold yellow]📁 Files & Configuration[/bold yellow]")
         file_checks = {
             'Secrets Folder': self.validate_secrets_folder,
             'Cookies File': self.validate_cookies_file,
@@ -372,7 +390,8 @@ class APIValidator:
             self.results[check_name] = (success, message)
 
         # ========== SECTION 4: API KEYS ==========
-        console.print("\n[bold yellow]🔐 API Keys[/bold yellow]")
+        if not self.quiet:
+            console.print("\n[bold yellow]🔐 API Keys[/bold yellow]")
 
         # Critical APIs (must pass)
         critical_apis = {
@@ -401,8 +420,9 @@ class APIValidator:
             success, message = validator()
             self.results[api_name] = (success, message)
 
-        # ========== DISPLAY RESULTS TABLE ==========
-        self._display_results()
+        # ========== DISPLAY RESULTS TABLE (only if not quiet) ==========
+        if not self.quiet:
+            self._display_results()
 
         # ========== DETERMINE OVERALL STATUS ==========
         # Critical items that MUST pass
@@ -443,18 +463,21 @@ class APIValidator:
 
         # Display final verdict
         if failed_critical:
-            console.print(f"\n[bold red]❌ VALIDATION FAILED - Critical issues found![/bold red]")
-            console.print(f"[yellow]Failed critical checks: {', '.join(failed_critical)}[/yellow]")
-            console.print("[dim]Fix these issues before running the pipeline.[/dim]\n")
+            if not self.quiet:
+                console.print(f"\n[bold red]❌ VALIDATION FAILED - Critical issues found![/bold red]")
+                console.print(f"[yellow]Failed critical checks: {', '.join(failed_critical)}[/yellow]")
+                console.print("[dim]Fix these issues before running the pipeline.[/dim]\n")
             return False
         elif warnings:
-            console.print(f"\n[bold yellow]⚠️ VALIDATION PASSED with warnings[/bold yellow]")
-            console.print(f"[dim]Warnings: {', '.join(warnings)}[/dim]")
-            console.print("[green]✅ All critical checks passed - Safe to proceed[/green]\n")
+            if not self.quiet:
+                console.print(f"\n[bold yellow]⚠️ VALIDATION PASSED with warnings[/bold yellow]")
+                console.print(f"[dim]Warnings: {', '.join(warnings)}[/dim]")
+                console.print("[green]✅ All critical checks passed - Safe to proceed[/green]\n")
             return True
         else:
-            console.print(f"\n[bold green]✅ PERFECT! All validations passed successfully![/bold green]")
-            console.print("[dim]System is fully ready for pipeline execution.[/dim]\n")
+            if not self.quiet:
+                console.print(f"\n[bold green]✅ PERFECT! All validations passed successfully![/bold green]")
+                console.print("[dim]System is fully ready for pipeline execution.[/dim]\n")
             return True
 
     def _display_results(self):
@@ -500,8 +523,19 @@ def validate_apis_before_run() -> bool:
     Returns:
         bool: True if all critical validations passed, False otherwise
     """
-    validator = APIValidator()
-    return validator.validate_all()
+    # Quiet mode - minimal output
+    console.print("[dim]Checking system...[/dim]", end=" ")
+    
+    validator = APIValidator(quiet=True)  # Pass quiet=True
+    result = validator.validate_all()
+    
+    if result:
+        console.print("[green]✓ Ready[/green]")
+    else:
+        console.print("[red]✗ Failed[/red]")
+        console.print("[yellow]→ Run Option 0 for detailed diagnostics[/yellow]\n")
+    
+    return result
 
 
 if __name__ == "__main__":

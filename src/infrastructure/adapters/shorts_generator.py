@@ -1174,7 +1174,16 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
     if model is None:
         # Load Gemini
         try:
-            import google.generativeai as genai
+            # Suppress STDERR warnings from Google's C++ libraries during import
+            import sys
+            _original_stderr = sys.stderr
+            try:
+                sys.stderr = open(os.devnull, 'w')
+                import google.generativeai as genai
+            finally:
+                if sys.stderr != _original_stderr:
+                    sys.stderr.close()
+                sys.stderr = _original_stderr
 
             # Try to get API key from environment or file
             api_key = os.getenv("GEMINI_API_KEY")
@@ -1408,8 +1417,18 @@ def upload_short(
         )
 
         # Call Gemini API
-        import google.generativeai as genai
         import os
+        import sys
+        
+        # Suppress STDERR warnings from Google's C++ libraries during import
+        _original_stderr = sys.stderr
+        try:
+            sys.stderr = open(os.devnull, 'w')
+            import google.generativeai as genai
+        finally:
+            if sys.stderr != _original_stderr:
+                sys.stderr.close()
+            sys.stderr = _original_stderr
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:

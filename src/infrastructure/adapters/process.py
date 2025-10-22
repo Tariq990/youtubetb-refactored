@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple
 import os
+import sys
 import json
 import absl.logging
 import importlib
@@ -140,7 +141,17 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
             model_name = None
     if not model_name:
         model_name = "gemini-2.5-flash"
-    genai = importlib.import_module("google.generativeai")
+    
+    # Suppress STDERR warnings from Google's C++ libraries during import
+    _original_stderr = sys.stderr
+    try:
+        sys.stderr = open(os.devnull, 'w')
+        genai = importlib.import_module("google.generativeai")
+    finally:
+        if sys.stderr != _original_stderr:
+            sys.stderr.close()
+        sys.stderr = _original_stderr
+    
     getattr(genai, "configure")(api_key=API_KEY)
     Model = getattr(genai, "GenerativeModel")
     default_name = "gemini-2.5-flash"
@@ -348,8 +359,9 @@ def _get_book_cover_from_amazon_fallback(title: str, author: Optional[str]) -> O
 
 def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[str]:
     """
-    البحث عن غلاف الكتاب من مصادر متعددة.
-    يبحث باسم الكتاب + اسم الكاتب (إنجليزي فقط).
+    البحث عن غلاف الكتاب من Amazon فقط.
+    يستخدم Playwright مع الكوكيز لتجنب الحظر.
+    يختار الكتاب الأعلى تقييماً ومراجعات.
     
     Args:
         title: Book title (English)
@@ -364,28 +376,41 @@ def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[s
     else:
         print(f"[Cover] البحث عن غلاف: {title}")
 
-    # Try multi-source fetcher first (Google Books, Open Library, etc.)
+    # استخدام Amazon فقط مع الكوكيز
+    print("[Cover] استخدام Amazon مع الكوكيز (اختيار الأعلى تقييماً)...")
+    
     try:
-        from .book_cover_fetcher import get_book_cover_multi_source
-        print("[Cover] محاولة المصادر المجانية (Google Books, Open Library, Goodreads)...")
-        url = get_book_cover_multi_source(title, author)
+        from .amazon_cover import get_book_cover_from_amazon
+        
+        # محاولة العثور على ملف الكوكيز
+        cookies_path = None
+        for path in [Path('secrets/cookies.txt'), Path('cookies.txt')]:
+            if path.exists():
+                cookies_path = path
+                print(f"[Cover] ✓ تم العثور على ملف الكوكيز: {path}")
+                break
+        
+        if not cookies_path:
+            print("[Cover] ⚠️ تحذير: لم يتم العثور على ملف cookies.txt - قد يتم الحظر")
+        
+        # جلب الغلاف من Amazon
+        url = get_book_cover_from_amazon(
+            title, 
+            author, 
+            use_playwright=True,
+            cookies_path=cookies_path
+        )
+        
         if url:
-            print(f"[Cover] ✅ تم العثور على الغلاف من المصادر المجانية")
+            print(f"[Cover] ✅ تم العثور على الغلاف من Amazon")
             return url
+    
     except ImportError:
-        print("[Cover] تحذير: book_cover_fetcher غير متاح")
+        print("[Cover] ❌ خطأ: amazon_cover module غير متاح")
     except Exception as e:
-        print(f"[Cover] خطأ في المصادر المجانية: {e}")
+        print(f"[Cover] ❌ خطأ في Amazon: {e}")
     
-    # Fallback to Amazon (kept for compatibility but often blocked)
-    print("[Cover] محاولة Amazon كخيار احتياطي...")
-    url = _get_book_cover_from_amazon(title, author)
-    
-    if url:
-        print(f"[Cover] ✅ تم العثور على الغلاف من Amazon")
-        return url
-    
-    print("[Cover] ❌ لم يتم العثور على غلاف من جميع المصادر")
+    print("[Cover] ❌ لم يتم العثور على غلاف")
     return None
 
 

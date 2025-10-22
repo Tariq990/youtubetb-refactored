@@ -40,6 +40,66 @@ except ImportError:
     box = None
 
 
+def _ensure_database_synced() -> bool:
+    """
+    Ensure database.json is synced with YouTube channel.
+    If database is empty, attempts to sync from YouTube automatically.
+    
+    Returns:
+        True if database has data (local or synced), False otherwise
+    """
+    from src.infrastructure.adapters.database import (
+        _load_database, 
+        sync_database_from_youtube
+    )
+    
+    db = _load_database()
+    
+    # If database has books, we're good
+    if db.get("books"):
+        if console:
+            console.print("[dim]✓ Using local database[/dim]")
+        else:
+            print("✓ Using local database")
+        return True
+    
+    # Database is empty - attempt YouTube sync
+    if console:
+        console.print("\n[yellow]⚠️  Local database is empty![/yellow]")
+        console.print("[cyan]   Attempting to sync from YouTube channel...[/cyan]")
+    else:
+        print("\n⚠️  Local database is empty!")
+        print("   Attempting to sync from YouTube channel...")
+    
+    try:
+        synced = sync_database_from_youtube()
+        
+        if synced:
+            if console:
+                console.print("[green]✅ Database synced from YouTube successfully![/green]")
+                console.print("[dim]   Duplicate detection is now active.[/dim]\n")
+            else:
+                print("✅ Database synced from YouTube successfully!")
+                print("   Duplicate detection is now active.\n")
+            return True
+        else:
+            if console:
+                console.print("[yellow]⚠️  Sync failed. Proceeding with empty database.[/yellow]")
+                console.print("[dim]   (Duplicates won't be detected until next sync)[/dim]\n")
+            else:
+                print("⚠️  Sync failed. Proceeding with empty database.")
+                print("   (Duplicates won't be detected until next sync)\n")
+            return False
+    except Exception as e:
+        if console:
+            console.print(f"[yellow]⚠️  Sync error: {e}[/yellow]")
+            console.print("[dim]   Proceeding with empty database.[/dim]\n")
+        else:
+            print(f"⚠️  Sync error: {e}")
+            print("   Proceeding with empty database.\n")
+        return False
+
+
 def check_book_status(book_name: str) -> Dict:
     """
     Check book status in database to determine processing strategy.
@@ -225,6 +285,7 @@ def process_books_batch(
     Process multiple books sequentially with intelligent handling.
 
     INTELLIGENT FEATURES:
+    - Auto-syncs database from YouTube if empty (avoids duplicates)
     - Checks database before processing each book
     - Skips books with status="done" (already uploaded)
     - Resumes books with status="processing" (incomplete)
@@ -249,6 +310,9 @@ def process_books_batch(
     print("\n" + "="*70)
     print(f"🚀 INTELLIGENT BATCH PROCESSING: {len(books)} books")
     print("="*70)
+    
+    # Step 0: Ensure database is synced (auto-sync from YouTube if empty)
+    _ensure_database_synced()
     
     # Step 1: Analyze all books first
     if console:
