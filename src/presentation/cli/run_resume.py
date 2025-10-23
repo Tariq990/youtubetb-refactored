@@ -728,23 +728,34 @@ def main() -> int:
         short_id = meta.get("short_video_id")
         short_url = f"https://youtube.com/watch?v={short_id}" if short_id else None
 
-        if book_name and main_video_url:
-            with combined_log.open("a", encoding="utf-8") as lf:
-                sys.stdout = TeeWriter(_stdout, lf)
-                print("\n\n==============================================")
-                print(f"[Database] UPDATE STATUS @ {datetime.now().isoformat(timespec='seconds')}")
-                print("==============================================")
-                try:
-                    update_book_status(
-                        book_name=book_name,
-                        author_name=author_name,
-                        status="done",
-                        youtube_url=main_video_url,
-                        short_url=short_url
-                    )
-                    print(f"✅ Database updated for: {book_name}")
-                finally:
-                    sys.stdout = _stdout
+        if book_name:
+            # CRITICAL: Only update to "done" if we have BOTH main video AND short
+            if main_video_url and short_url:
+                with combined_log.open("a", encoding="utf-8") as lf:
+                    sys.stdout = TeeWriter(_stdout, lf)
+                    print("\n\n==============================================")
+                    print(f"[Database] UPDATE STATUS @ {datetime.now().isoformat(timespec='seconds')}")
+                    print("==============================================")
+                    try:
+                        update_book_status(
+                            book_name=book_name,
+                            author_name=author_name,
+                            status="done",
+                            youtube_url=main_video_url,
+                            short_url=short_url
+                        )
+                        print(f"✅ Database updated: Book complete (Main + Short)")
+                    finally:
+                        sys.stdout = _stdout
+            else:
+                # Incomplete - keep status as "processing"
+                missing = []
+                if not main_video_url:
+                    missing.append("main video")
+                if not short_url:
+                    missing.append("short")
+                print(f"⚠️ Book incomplete - missing: {', '.join(missing)}")
+                print(f"Status remains 'processing' - folder NOT deleted")
     except Exception as e:
         print(f"⚠️ Failed to update database status: {e}")
 
