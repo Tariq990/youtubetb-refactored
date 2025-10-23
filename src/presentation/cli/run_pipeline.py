@@ -797,8 +797,8 @@ def _run_internal(
                     console.print(f"[yellow]Status:[/yellow] {status}")
                     if existing.get('youtube_url'):
                         console.print(f"[yellow]YouTube:[/yellow] {existing['youtube_url']}")
-                    if existing.get('short_youtube_url'):
-                        console.print(f"[yellow]Short:[/yellow] {existing['short_youtube_url']}")
+                    if existing.get('youtube_short_url'):
+                        console.print(f"[yellow]Short:[/yellow] {existing['youtube_short_url']}")
                     console.print(f"\n[red]Pipeline stopped to prevent duplicate processing.[/red]")
                     return
 

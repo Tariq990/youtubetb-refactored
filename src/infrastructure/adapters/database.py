@@ -369,12 +369,12 @@ def update_book_status(
                         book["youtube_video_id"] = match.group(1)
 
                 if short_url:
-                    book["short_url"] = short_url
+                    book["youtube_short_url"] = short_url
                     # Extract short ID
                     import re
                     match = re.search(r'(?:v=|/)([a-zA-Z0-9_-]{11})', short_url)
                     if match:
-                        book["short_video_id"] = match.group(1)
+                        book["youtube_short_video_id"] = match.group(1)
 
                 updated = True
                 break
@@ -385,7 +385,7 @@ def update_book_status(
             if youtube_url:
                 book["youtube_url"] = youtube_url
             if short_url:
-                book["short_url"] = short_url
+                book["youtube_short_url"] = short_url
 
             updated = True
             break
