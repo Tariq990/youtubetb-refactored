@@ -782,6 +782,11 @@ def _run_internal(
                 playlist = _get_book_playlist(model, book_name, author_name, prompts)
                 print(f"[early_meta] ✅ Playlist: {playlist}")
 
+                # CRITICAL: Add to database immediately after getting book name
+                # This ensures book is tracked from the start of pipeline
+                add_book(book_name, author_name, d["root"].name, status="processing", playlist=playlist)
+                print(f"[early_meta] ✅ Added to database: {book_name}")
+
                 # Check if book already exists in database
                 existing = check_book_exists(book_name, author_name)
                 status = existing.get('status') if existing else None
@@ -921,8 +926,10 @@ def _run_internal(
                         latest.mkdir(exist_ok=True)
                         (latest / "path.txt").write_text(str(new_root.resolve()), encoding="utf-8")
 
-                        # Add to database with playlist
-                        add_book(book_name, author_name, new_root.name, status="processing", playlist=playlist)
+                        # Update run_folder in database after rename
+                        from src.infrastructure.adapters.database import update_book_run_folder
+                        update_book_run_folder(book_name, author_name, new_root.name)
+                        print(f"[early_meta] ✅ Updated database with new folder name")
             else:
                 print(f"[early_meta] ⚠️ Could not extract book name")
         else:

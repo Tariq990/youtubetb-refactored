@@ -398,6 +398,54 @@ def update_book_status(
     return False
 
 
+def update_book_run_folder(
+    book_name: str,
+    author_name: Optional[str],
+    new_run_folder: str
+) -> bool:
+    """
+    Update the run_folder name for a book in the database.
+    Used when renaming folders after getting book metadata.
+
+    Args:
+        book_name: The main title of the book
+        author_name: The author name
+        new_run_folder: New folder name (e.g., "2025-10-23_12-34-56_Book-Name")
+
+    Returns:
+        True if successful, False otherwise
+    """
+    db = _load_database()
+
+    # Find the book
+    book_lower = book_name.strip().lower()
+    author_lower = author_name.strip().lower() if author_name else None
+
+    updated = False
+    for book in db.get("books", []):
+        title_match = book.get("main_title", "").strip().lower() == book_lower
+
+        if author_lower:
+            author_match = book.get("author_name", "").strip().lower() == author_lower
+            if title_match and author_match:
+                book["run_folder"] = new_run_folder
+                book["date_updated"] = datetime.now().isoformat(timespec="seconds")
+                updated = True
+                break
+        elif title_match:
+            book["run_folder"] = new_run_folder
+            book["date_updated"] = datetime.now().isoformat(timespec="seconds")
+            updated = True
+            break
+
+    if updated and _save_database(db):
+        print(f"[Database] ✅ Updated run_folder to '{new_run_folder}': {book_name}")
+        return True
+
+    print(f"[Database] Warning: Book '{book_name}' not found for run_folder update")
+    return False
+
+
 # ============================================================================
 # YouTube Channel Sync - NEW SYSTEM
 # ============================================================================
