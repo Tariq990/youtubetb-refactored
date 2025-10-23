@@ -252,16 +252,27 @@ class APIValidator:
         if not api_key:
             return False, "❌ API key not found in environment"
 
+        # Load model name from settings.json (same as pipeline uses)
+        model_name = "gemini-2.5-flash"  # Default
+        try:
+            import json
+            settings_path = Path("config/settings.json")
+            if settings_path.exists():
+                settings = json.loads(settings_path.read_text(encoding="utf-8"))
+                model_name = settings.get("gemini_model", model_name)
+        except Exception:
+            pass  # Use default if settings.json fails
+
         try:
             genai.configure(api_key=api_key)  # type: ignore
-            # Use latest stable Gemini model (gemini-2.0-flash)
-            model = genai.GenerativeModel('gemini-2.0-flash')  # type: ignore
+            # Use same model as pipeline (from settings.json)
+            model = genai.GenerativeModel(model_name)  # type: ignore
 
             # Test with a simple prompt
             response = model.generate_content("Say 'OK' if you receive this.")
 
             if response.text:
-                return True, "✅ Valid - Working"
+                return True, f"✅ Valid - Working ({model_name})"
             else:
                 return False, "❌ No response from API"
 
@@ -272,7 +283,7 @@ class APIValidator:
             elif 'quota' in error_msg:
                 return False, "⚠️ Quota exceeded"
             elif 'not found' in error_msg or '404' in error_msg:
-                return False, "❌ Model not available - Check API access"
+                return False, f"❌ Model '{model_name}' not available - Check API access"
             else:
                 return False, f"❌ Error: {str(e)[:50]}"
 

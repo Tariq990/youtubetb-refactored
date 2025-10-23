@@ -93,34 +93,62 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
         Generated text or empty string on failure
     """
     for attempt in range(max_retries):
+        start_time = time.time()  # Initialize at loop start
         try:
-            # Set longer timeout for large prompts
-            request_options = {"timeout": 180}  # 3 minutes timeout
+            # Set longer timeout for large prompts (5 minutes minimum for safety)
+            prompt_size = len(prompt)
+            if prompt_size > 15000:
+                timeout_seconds = 300  # 5 minutes for large prompts (15K+)
+            elif prompt_size > 8000:
+                timeout_seconds = 240  # 4 minutes for medium prompts
+            else:
+                timeout_seconds = 180  # 3 minutes for small prompts
+            
+            request_options = {"timeout": timeout_seconds}
+            
+            # Log timeout for transparency
+            if attempt == 0:  # Only log on first attempt
+                print(f"⏱️  Timeout set to {timeout_seconds}s ({timeout_seconds/60:.1f} min) for {prompt_size:,} chars")
+            
+            # Log API call start with timestamp
+            print(f"🔄 [Gemini API] Sending request (attempt {attempt + 1}/{max_retries})...")
+            
             resp = model.generate_content(
                 prompt, 
                 generation_config={"response_mime_type": mime_type},
                 request_options=request_options
             )
+            
+            # Log successful response with duration
+            duration = time.time() - start_time
+            print(f"✅ [Gemini API] Response received in {duration:.1f}s")
+            
             return _safe_text(resp)
         except Exception as e:
             error_msg = str(e)
+            duration = time.time() - start_time
+            print(f"❌ [Gemini API] Request failed after {duration:.1f}s: {error_msg[:100]}")
+            
             # Retry on timeout/deadline errors
-            if "504" in error_msg or "Deadline" in error_msg or "timeout" in error_msg.lower():
+            if "504" in error_msg or "Deadline" in error_msg or "timeout" in error_msg.lower() or "503" in error_msg:
                 if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 5  # 5s, 10s, 15s backoff
-                    print(f"⚠️  Timeout error (attempt {attempt + 1}/{max_retries}). Retrying in {wait_time}s...")
+                    # Progressive backoff: 10s, 20s, 30s (longer for server issues)
+                    wait_time = (attempt + 1) * 10
+                    print(f"⏳ Waiting {wait_time}s before retry...")
                     time.sleep(wait_time)
                     continue
-            print(f"❌ API call failed after {attempt + 1} attempts: {e}")
+            # For non-timeout errors, don't retry
+            print(f"❌ API call failed with non-retryable error after {attempt + 1} attempts")
             return ""
-    print(f"❌ All {max_retries} retry attempts failed")
+    print(f"❌ All {max_retries} retry attempts exhausted")
     return ""
 
 
 def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     API_KEY = os.environ.get("GEMINI_API_KEY")
     if not API_KEY:
-        repo_root = Path(__file__).resolve().parents[2]
+        # src/infrastructure/adapters/process.py -> need parents[3] to reach repo root
+        repo_root = Path(__file__).resolve().parents[3]
         for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
             try:
                 if f.exists():
@@ -157,16 +185,33 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     default_name = "gemini-2.5-flash"
     try_name = model_name or default_name
     model = Model(try_name)
-    # Quick sanity ping; if it fails and not default, fallback.
+    
+    # CRITICAL: Test API with a real call to catch errors early (403, quota, etc.)
     try:
         _ = model.generate_content("ping")
-    except Exception:
+        return model
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Gemini API validation failed: {error_msg[:200]}")
+        
+        # Try fallback to default model if using custom model
         if try_name != default_name:
+            print(f"⚠️  Trying fallback to default model: {default_name}")
             try:
                 model = Model(default_name)
-            except Exception:
-                pass
-    return model
+                _ = model.generate_content("ping")
+                print(f"✅ Fallback to {default_name} succeeded")
+                return model
+            except Exception as e2:
+                print(f"❌ Fallback also failed: {str(e2)[:200]}")
+        
+        # Both failed - API is truly broken
+        print("❌ CRITICAL: Gemini API is not working. Check:")
+        print("   1. API key is valid")
+        print("   2. Generative Language API is enabled in Google Cloud Console")
+        print("   3. Billing is set up and quota not exceeded")
+        print(f"   4. Visit: https://console.developers.google.com/apis/api/generativelanguage.googleapis.com")
+        return None
 
 
 def _clean_source_text(model, text: str, prompts: dict) -> str:
@@ -174,7 +219,9 @@ def _clean_source_text(model, text: str, prompts: dict) -> str:
         "\nYour task is to clean a raw Arabic transcript for a YouTube script.\n\nCRITICAL RULES FOR CLEANING:\n1. Remove all introductory and credit-related text (production/company/publisher/CTA/etc.).\n2. Start directly with the book's main content or author's introduction.\n3. Keep tone simple and conversational.\n4. Output ONLY the core content in Arabic.\n5. Do not translate or summarize.\n\nArabic Text:\n{text}\n"
     )
     prompt = _fmt(tpl, text=text)
-    return _gen(model, prompt)
+    # Use more retries for large texts (5 attempts instead of 3)
+    max_retries = 5 if len(text) > 15000 else 3
+    return _gen(model, prompt, max_retries=max_retries)
 
 
 def _clean_english_transcript(model, text: str, prompts: dict) -> str:
@@ -186,7 +233,9 @@ def _clean_english_transcript(model, text: str, prompts: dict) -> str:
         "\nYour task is to clean a raw English transcript from YouTube.\n\nCRITICAL RULES:\n1. Remove ALL intro/outro (channel promotions, subscribe requests, credits).\n2. Start directly with the book's main content.\n3. Fix obvious auto-transcription errors and typos.\n4. Remove repeated sentences or filler.\n5. Do NOT translate, summarize, or add new content.\n6. Output ONLY the core book content in English.\n\nEnglish Transcript:\n{text}\n"
     )
     prompt = _fmt(tpl, text=text)
-    return _gen(model, prompt)
+    # Use more retries for large texts (5 attempts instead of 3)
+    max_retries = 5 if len(text) > 15000 else 3
+    return _gen(model, prompt, max_retries=max_retries)
 
 
 def _translate_to_english(model, text: str, prompts: dict) -> str:
@@ -451,10 +500,18 @@ def cover_only(config_dir: Path, output_titles: Path) -> Optional[str]:
     cover_title = titles.get("main_title") or titles.get("book_name")
     cover_author = titles.get("author_name")
     if not cover_title:
-        print("No main_title found in titles JSON; cannot look up cover.")
+        print("❌ No main_title found in titles JSON; cannot look up cover.")
         return None
 
+    print("\n🖼️  Fetching book cover...")
+    stage_start = time.time()
     cover_url = _get_book_cover(str(cover_title), str(cover_author) if cover_author else None, model=model)
+    stage_duration = time.time() - stage_start
+    
+    if cover_url:
+        print(f"✅ Cover found in {stage_duration:.1f}s")
+    else:
+        print(f"⚠️  No cover found after {stage_duration:.1f}s")
 
     # Read optional preference from settings.json
     prefer_local = True
@@ -545,23 +602,46 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
     text = Path(transcript_path).read_text(encoding="utf-8")
 
     # Stage 1: Cleaning (language-specific)
-    print("Cleaning transcript...")
+    print(f"\n{'='*60}")
+    print(f"📝 [STAGE 1/3] CLEANING TRANSCRIPT ({detected_lang.upper()})")
+    print(f"{'='*60}")
+    print(f"📊 Input size: {len(text):,} chars ({len(text.split()):,} words)")
+    
+    stage_start = time.time()
     if detected_lang == "ar":
         cleaned = _clean_source_text(model, text, prompts)
     else:
         cleaned = _clean_english_transcript(model, text, prompts)
+    stage_duration = time.time() - stage_start
     
     if not cleaned:
+        print(f"❌ Cleaning failed!")
         return None
+    
+    print(f"✅ Cleaning complete in {stage_duration:.1f}s")
+    print(f"📊 Output size: {len(cleaned):,} chars ({len(cleaned.split()):,} words)")
 
     # Stage 2: Translation (skip for English!)
     if detected_lang == "ar":
-        print("Translating to English...")
+        print(f"\n{'='*60}")
+        print(f"🌍 [STAGE 2/3] TRANSLATING TO ENGLISH")
+        print(f"{'='*60}")
+        print(f"📊 Input size: {len(cleaned):,} chars ({len(cleaned.split()):,} words)")
+        
+        stage_start = time.time()
         english = _translate_to_english(model, cleaned, prompts)
+        stage_duration = time.time() - stage_start
+        
         if not english:
+            print(f"❌ Translation failed!")
             return None
+        
+        print(f"✅ Translation complete in {stage_duration:.1f}s")
+        print(f"📊 Output size: {len(english):,} chars ({len(english.split()):,} words)")
     else:
-        print("⏭️  Skipping translation (source is already in English)")
+        print(f"\n{'='*60}")
+        print(f"⏭️  [STAGE 2/3] SKIPPING TRANSLATION (Already English)")
+        print(f"{'='*60}")
         english = cleaned  # Already clean English text
 
     # Optional third stage: YouTube Scriptify
@@ -578,13 +658,33 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
 
     scriptified: Optional[str] = None
     if enable_scriptify:
-        print("Scriptifying for YouTube style...")
+        print(f"\n{'='*60}")
+        print(f"🎬 [STAGE 3/3] SCRIPTIFYING FOR YOUTUBE")
+        print(f"{'='*60}")
+        print(f"📊 Input size: {len(english):,} chars ({len(english.split()):,} words)")
+        
+        stage_start = time.time()
         scriptified = _scriptify_youtube(model, english, prompts)
+        stage_duration = time.time() - stage_start
+        
         if not scriptified:
+            print(f"❌ Scriptify failed! Falling back to translated text.")
             # if model didn't return, fall back to english
             scriptified = english
+        else:
+            print(f"✅ Scriptify complete in {stage_duration:.1f}s")
+            print(f"📊 Output size: {len(scriptified):,} chars ({len(scriptified.split()):,} words)")
+    else:
+        print(f"\n{'='*60}")
+        print(f"⏭️  [STAGE 3/3] SKIPPING SCRIPTIFY (Disabled in settings)")
+        print(f"{'='*60}")
+        scriptified = english
+    
+    print(f"\n{'='*60}")
+    print(f"🎉 TEXT PROCESSING COMPLETE!")
+    print(f"{'='*60}\n")
 
-    print("Extracting official book name...")
+    print("\n📚 Extracting book metadata...")
     # Check if book metadata already exists in output.titles.json (from Stage 0)
     existing_book_name = None
     existing_author_name = None
@@ -594,25 +694,40 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
             existing_book_name = existing_data.get("main_title")
             existing_author_name = existing_data.get("author_name")
             if existing_book_name:
-                print(f"✅ Using existing book metadata from output.titles.json")
-                print(f"   Book: {existing_book_name}")
-                print(f"   Author: {existing_author_name or 'Unknown'}")
+                print(f"✅ Found existing metadata in output.titles.json")
+                print(f"   📖 Book: {existing_book_name}")
+                print(f"   ✍️  Author: {existing_author_name or 'Unknown'}")
         except Exception:
             pass
 
     # If not found in existing file, extract from transcript
     if not existing_book_name:
+        print("🔍 Extracting book name from transcript...")
+        stage_start = time.time()
         book_name, author_name = _get_official_book_name(model, text, prompts)
+        stage_duration = time.time() - stage_start
+        
         if not book_name:
+            print(f"❌ Book name extraction failed!")
             return None
+        
+        print(f"✅ Book name extracted in {stage_duration:.1f}s")
+        print(f"   📖 Book: {book_name}")
+        print(f"   ✍️  Author: {author_name or 'Unknown'}")
     else:
         book_name = existing_book_name
         author_name = existing_author_name
 
-    print("Generating titles...")
+    print("\n🎯 Generating YouTube titles...")
+    stage_start = time.time()
     titles = _generate_titles(model, book_name, prompts)
+    stage_duration = time.time() - stage_start
+    
     if not titles:
+        print(f"❌ Title generation failed!")
         return None
+    
+    print(f"✅ Titles generated in {stage_duration:.1f}s")
 
     # Ensure author_name is stored in output.titles.json right after main_title
     try:

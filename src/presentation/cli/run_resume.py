@@ -34,6 +34,9 @@ if load_dotenv is not None:
         load_dotenv(dotenv_path=str(secrets_env))
 
 # Now import from src
+from src.infrastructure.adapters.search import main as search_main
+from src.infrastructure.adapters.transcribe import main as transcribe_main
+from src.infrastructure.adapters.process import main as process_main
 from src.infrastructure.adapters.youtube_metadata import main as youtube_metadata_main
 from src.infrastructure.adapters.tts import main as tts_main
 from src.infrastructure.adapters.render import main as render_main
@@ -708,9 +711,122 @@ def main() -> int:
                 finally:
                     sys.stdout = _stdout
 
+        elif stage == "search":
+            # Re-run search stage (requires input_name.txt)
+            input_name_file = run_dir / "input_name.txt"
+            if not input_name_file.exists():
+                print(f"❌ Cannot resume search: input_name.txt not found in {run_dir}")
+                return 3
+            
+            with combined_log.open("a", encoding="utf-8") as lf:
+                sys.stdout = TeeWriter(_stdout, lf)
+                print("\n\n==============================================")
+                print(f"[Stage] SEARCH @ {datetime.now().isoformat(timespec='seconds')}")
+                print("==============================================")
+                t0 = time.time()
+                try:
+                    search_query = input_name_file.read_text(encoding="utf-8").strip()
+                    print(f"📚 Searching for: {search_query}")
+                    
+                    # search_main saves results directly to output_dir and returns list
+                    results = search_main(query=search_query, output_dir=run_dir)
+                    if not results:
+                        print(f"❌ search failed after {time.time() - t0:.1f}s")
+                        sys.stdout = _stdout
+                        return 3
+                    
+                    # search_main already saves search.results.json and search.chosen.json
+                    search_chosen_json = run_dir / "search.chosen.json"
+                    
+                    elapsed = time.time() - t0
+                    print(f"✅ search completed in {elapsed:.1f}s")
+                    _update_summary(run_dir, "search", "ok", str(search_chosen_json))
+                finally:
+                    sys.stdout = _stdout
+
+        elif stage == "transcribe":
+            # Re-run transcribe stage (requires search.chosen.json)
+            search_chosen_json = run_dir / "search.chosen.json"
+            if not search_chosen_json.exists():
+                print(f"❌ Cannot resume transcribe: search.chosen.json not found")
+                return 3
+            
+            with combined_log.open("a", encoding="utf-8") as lf:
+                sys.stdout = TeeWriter(_stdout, lf)
+                print("\n\n==============================================")
+                print(f"[Stage] TRANSCRIBE @ {datetime.now().isoformat(timespec='seconds')}")
+                print("==============================================")
+                t0 = time.time()
+                try:
+                    chosen = json.loads(search_chosen_json.read_text(encoding="utf-8"))
+                    video_url = chosen.get("url")
+                    if not video_url:
+                        print(f"❌ No video URL in search.chosen.json")
+                        sys.stdout = _stdout
+                        return 3
+                    
+                    print(f"🎥 Transcribing: {video_url}")
+                    
+                    # transcribe_main returns Path to transcript file, not text
+                    transcript_path = transcribe_main(
+                        search_result=video_url,
+                        output_dir=run_dir
+                    )
+                    
+                    if not transcript_path or not transcript_path.exists():
+                        print(f"❌ transcribe failed after {time.time() - t0:.1f}s")
+                        sys.stdout = _stdout
+                        return 3
+                    
+                    transcribe_txt = transcript_path
+                    
+                    elapsed = time.time() - t0
+                    print(f"✅ transcribe completed in {elapsed:.1f}s")
+                    _update_summary(run_dir, "transcribe", "ok", str(transcribe_txt))
+                finally:
+                    sys.stdout = _stdout
+
+        elif stage == "process":
+            # Re-run process stage (requires transcribe.txt)
+            transcribe_txt = run_dir / "transcribe.txt"
+            if not transcribe_txt.exists():
+                print(f"❌ Cannot resume process: transcribe.txt not found")
+                return 3
+            
+            with combined_log.open("a", encoding="utf-8") as lf:
+                sys.stdout = TeeWriter(_stdout, lf)
+                print("\n\n==============================================")
+                print(f"[Stage] PROCESS @ {datetime.now().isoformat(timespec='seconds')}")
+                print("==============================================")
+                t0 = time.time()
+                try:
+                    config_dir = repo_root / "config"
+                    output_text = run_dir / "translate.txt"
+                    output_titles = run_dir / "output.titles.json"
+                    
+                    print(f"🤖 Processing with Gemini AI...")
+                    
+                    result_path = process_main(
+                        transcript_path=transcribe_txt,
+                        config_dir=config_dir,
+                        output_text=output_text,
+                        output_titles=output_titles
+                    )
+                    
+                    if not result_path:
+                        print(f"❌ process failed after {time.time() - t0:.1f}s")
+                        sys.stdout = _stdout
+                        return 3
+                    
+                    elapsed = time.time() - t0
+                    print(f"✅ process completed in {elapsed:.1f}s")
+                    _update_summary(run_dir, "process", "ok", str(result_path))
+                finally:
+                    sys.stdout = _stdout
+
         else:
-            # Earlier stages (search/transcribe/process) are not handled by resume
-            print(f"Skipping unsupported stage in resume context: {stage}")
+            # Unknown stage
+            print(f"⚠️  Unknown stage: {stage} (skipping)")
 
     # Final: Update database status to "done" after successful resume
     try:
