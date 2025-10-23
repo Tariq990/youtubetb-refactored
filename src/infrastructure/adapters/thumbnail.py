@@ -441,8 +441,8 @@ def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: in
     size = size / golden_ratio if size > 150 else size * golden_ratio * 0.8
 
     # Ensure size is within dynamic range based on text complexity
-    min_size = max(80, 200 - word_count * 5)
-    max_size = min(250, 300 - density * 2)
+    min_size = max(60, 180 - word_count * 5)  # Reduced from 80/200 for smaller text
+    max_size = min(220, 280 - density * 2)  # Reduced from 250/300 for smaller text
 
     return int(max(min_size, min(max_size, size)))
 
@@ -1002,7 +1002,7 @@ def generate_thumbnail(
     try:
         tsize = max(40, int(title_font_size))
     except Exception:
-        tsize = 110
+        tsize = 90  # Reduced from 110 for smaller initial size
 
     # REMOVED: Short title boost - now ALL titles use dynamic sizing
     title_word_count = _word_count(title)
@@ -1032,51 +1032,62 @@ def generate_thumbnail(
     render_title = str(title).upper()
 
     # Determine optimal number of lines for title
-    # FIXED: Use 3 lines for 3-5 word titles to accommodate larger font sizes
+    # ENHANCED: Smart line distribution for all word counts
     word_count = _word_count(render_title)
+    words = render_title.split()
+    
     if word_count <= 2:
         target_lines = 1
-    elif word_count <= 5:
-        target_lines = 3  # Use 3 lines for 3-5 word titles (better distribution)
-    else:
-        target_lines = 3  # 6+ words also use 3 lines max
-
-    # Special handling for 5-word titles: split as 3+2
-    if word_count == 5:
-        words = render_title.split()
-        title_lines = [
-            " ".join(words[:3]),  # First 3 words
-            " ".join(words[3:])   # Last 2 words
-        ]
+        title_lines = [render_title]
+    elif word_count == 3:
+        target_lines = 2
+        # Split as 2+1 for better balance
+        title_lines = [" ".join(words[:2]), words[2]]
     elif word_count == 4:
-        # Special handling for 4-word titles: split as 2+2 for better balance
-        words = render_title.split()
-        title_lines = [
-            " ".join(words[:2]),  # First 2 words
-            " ".join(words[2:])   # Last 2 words
-        ]
+        target_lines = 2
+        # Split as 2+2 for perfect balance
+        title_lines = [" ".join(words[:2]), " ".join(words[2:])]
+    elif word_count == 5:
+        target_lines = 3
+        # Split as 2+2+1 for balanced distribution
+        title_lines = [" ".join(words[:2]), " ".join(words[2:4]), words[4]]
+    elif word_count == 6:
+        target_lines = 3
+        # Split as 2+2+2 for perfect 3-line balance
+        title_lines = [" ".join(words[:2]), " ".join(words[2:4]), " ".join(words[4:])]
+    elif word_count == 7:
+        target_lines = 3
+        # Split as 3+2+2 or 2+3+2 (use balanced wrapper)
+        title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=3)
     else:
-        # Use balanced line breaking for all other titles
-        title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=target_lines)
+        # 8+ words: use balanced line breaking with max 3 lines
+        target_lines = 3
+        title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=3)
 
     # CRITICAL FIX: If any line is still too wide, iteratively reduce font size
-    max_attempts = 15
+    max_attempts = 30  # Increased from 15 to allow more reductions
     for attempt in range(max_attempts):
         max_line_width = max(_text_width(title_font, line) for line in title_lines) if title_lines else 0
         if max_line_width <= text_area_w:
             break  # All lines fit!
         # Reduce font size by 2px for finer control (changed from 5px)
-        tsize = max(80, tsize - 2)  # INCREASED minimum from 40 to 80px
+        tsize = max(40, tsize - 2)  # LOWERED minimum from 50 to 40px for even smaller text
         title_font = _load_font(tsize, title_font_cands, strict=strict_fonts, role="title", debug=debug)
-        # Re-apply the same splitting logic
-        if word_count == 5:
-            words = render_title.split()
-            title_lines = [" ".join(words[:3]), " ".join(words[3:])]
+        # Re-apply the same smart splitting logic
+        words = render_title.split()
+        if word_count <= 2:
+            title_lines = [render_title]
+        elif word_count == 3:
+            title_lines = [" ".join(words[:2]), words[2]]
         elif word_count == 4:
-            words = render_title.split()
             title_lines = [" ".join(words[:2]), " ".join(words[2:])]
+        elif word_count == 5:
+            title_lines = [" ".join(words[:2]), " ".join(words[2:4]), words[4]]
+        elif word_count == 6:
+            title_lines = [" ".join(words[:2]), " ".join(words[2:4]), " ".join(words[4:])]
         else:
-            title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=target_lines)
+            # 7+ words: use balanced wrapper
+            title_lines = _wrap_text_balanced(render_title, title_font, text_area_w, max_lines=3)
         if debug and attempt < max_attempts - 1:
             try:
                 print(f"[thumb] text too wide ({max_line_width}px > {text_area_w}px), reducing to {tsize}px")

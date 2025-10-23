@@ -1347,14 +1347,19 @@ def _run_internal(
             slug = slugify_english(str(title_en))
             if slug:
                 base_dir = d["root"].parent
-                new_root = base_dir / f"{d['root'].name}_{slug}"
-                if new_root.exists():
-                    for i in range(1, 100):
-                        candidate = base_dir / f"{d['root'].name}_{slug}-{i}"
-                        if not candidate.exists():
-                            new_root = candidate
-                            break
-                d["root"].rename(new_root)
+                # Check if folder already contains the book name (to avoid duplicate naming)
+                if slug not in d["root"].name:
+                    new_root = base_dir / f"{d['root'].name}_{slug}"
+                    if new_root.exists():
+                        for i in range(1, 100):
+                            candidate = base_dir / f"{d['root'].name}_{slug}-{i}"
+                            if not candidate.exists():
+                                new_root = candidate
+                                break
+                    d["root"].rename(new_root)
+                else:
+                    # Folder already has book name, skip rename
+                    new_root = d["root"]
                 try:
                     latest_dir = base_dir / "latest"
                     latest_dir.mkdir(parents=True, exist_ok=True)

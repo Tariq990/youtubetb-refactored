@@ -95,14 +95,14 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
     for attempt in range(max_retries):
         start_time = time.time()  # Initialize at loop start
         try:
-            # Set longer timeout for large prompts (5 minutes minimum for safety)
+            # Set longer timeout for large prompts (10 minutes for safety)
             prompt_size = len(prompt)
             if prompt_size > 15000:
-                timeout_seconds = 300  # 5 minutes for large prompts (15K+)
+                timeout_seconds = 600  # 10 minutes for large prompts (15K+)
             elif prompt_size > 8000:
-                timeout_seconds = 240  # 4 minutes for medium prompts
+                timeout_seconds = 480  # 8 minutes for medium prompts
             else:
-                timeout_seconds = 180  # 3 minutes for small prompts
+                timeout_seconds = 300  # 5 minutes for small prompts
             
             request_options = {"timeout": timeout_seconds}
             
