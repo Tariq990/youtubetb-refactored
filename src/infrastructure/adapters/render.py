@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from urllib.parse import urlparse
@@ -175,7 +176,10 @@ async def _capture_cfr_frames(
 ):
     from playwright.async_api import async_playwright
 
-    file_url = html_path.absolute().as_uri()
+    # Windows file:/// URLs need forward slashes
+    abs_path = html_path.absolute()
+    file_url = f"file:///{abs_path.as_posix()}"
+    print(f"🌐 Loading template: {file_url}")
     out_dir.mkdir(parents=True, exist_ok=True)
     total_frames = int(round(duration * fps))
 
@@ -211,10 +215,14 @@ async def _capture_cfr_frames(
         )
 
         page = await context.new_page()
-        await page.goto(file_url)
+        print(f"🔗 Loading: {file_url}")
+        await page.goto(file_url, wait_until="domcontentloaded", timeout=30000)  # Don't wait for external CDNs
+        print("✅ DOM loaded")
         try:
             await page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:
+            print("🌐 Network idle")
+        except Exception as e:
+            print(f"⚠️ Network not idle (CDN timeout): {e}")
             pass
         await asyncio.sleep(0.3)
 
@@ -223,13 +231,13 @@ async def _capture_cfr_frames(
 
         # allow assets to load
         await asyncio.sleep(2)
-        image_timeout = 4000
+        image_timeout = 30000  # Increased to 30 seconds for large images
         strict_img = False
         if settings:
             try:
                 image_timeout = int(settings.get("render_image_timeout_ms", image_timeout))
             except Exception:
-                image_timeout = 4000
+                image_timeout = 30000
             try:
                 strict_img = bool(settings.get("render_strict_image_load", strict_img))
             except Exception:
@@ -328,6 +336,17 @@ def main(
     width = int(settings.get("width", 1920))
     height = int(settings.get("height", 1080))
 
+    # CRITICAL: Always use cover image from run directory (ignore settings.json cover_image)
+    run_dir = titles_json.parent
+    cover_jpg = run_dir / "bookcover.jpg"
+    if cover_jpg.exists():
+        settings["cover_image"] = cover_jpg.absolute().as_uri()
+        print(f"📸 Using book cover: {cover_jpg}")
+    else:
+        print(f"⚠️ WARNING: No book cover found at {cover_jpg}")
+        # Remove old cover_image if exists
+        settings.pop("cover_image", None)
+
     # Delete old render output if exists (for re-runs)
     if output_mp4.exists():
         try:
@@ -361,3 +380,35 @@ def main(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return output_mp4 if output_mp4.exists() else None
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Render HTML template to video")
+    parser.add_argument("--run", required=True, help="Run directory path")
+    parser.add_argument("--html", required=True, help="HTML template path")
+    parser.add_argument("--settings", required=True, help="Settings JSON path")
+    parser.add_argument("--out", required=True, help="Output MP4 path")
+    args = parser.parse_args()
+
+    run_dir = Path(args.run)
+    html_path = Path(args.html)
+    settings_path = Path(args.settings)
+    output_path = Path(args.out)
+
+    # Load titles from run directory
+    titles_json = run_dir / "output.titles.json"
+    
+    result = main(
+        titles_json=titles_json,
+        settings_json=settings_path,
+        template_html=html_path,
+        narration_mp3=run_dir / "narration.mp3",  # Not used but required
+        output_mp4=output_path,
+    )
+    
+    if result:
+        print(f"✅ Video rendered: {result}")
+    else:
+        print("❌ Render failed")
+        sys.exit(1)

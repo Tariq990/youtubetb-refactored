@@ -85,7 +85,7 @@
 			height: 100%;
 			border-radius: 1rem;
 			overflow: hidden;
-			background: rgba(0,0,0,0.20);
+			background: rgba(0,0,0,0.20); /* Original semi-transparent background */
 			-webkit-backdrop-filter: blur(8px);
 			backdrop-filter: blur(8px);
 			border: 1px solid rgba(255,255,255,0.08); /* slightly stronger to complement outer frame */
@@ -94,10 +94,11 @@
 				inset 0 0 30px rgba(0,0,0,0.35); /* inner depth */
 		}
 		.cover-img {
-			width: 100%;
-			height: 100%;
-			object-fit: cover;
-			border-radius: inherit;
+		width: 100%;
+		height: 100%;
+		object-fit: cover; /* Fill width, crop height if needed */
+		object-position: top; /* Prioritize top of book cover, crop bottom */
+		border-radius: inherit;
 			transform: translateZ(0); /* avoid blit artifacts */
 		}
 		.cover-gloss {

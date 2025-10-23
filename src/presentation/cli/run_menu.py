@@ -606,9 +606,9 @@ def run_search():
 def run_transcribe():
     url = Prompt.ask("Enter YouTube URL (leave blank to be prompted)", default="")
     if url.strip():
-        subprocess.run([py(), "2_transcribe_youtube.py", url], cwd=repo_root())
+        subprocess.run([py(), "-m", "src.infrastructure.adapters.transcribe", url], cwd=repo_root())
     else:
-        subprocess.run([py(), "2_transcribe_youtube.py"], cwd=repo_root())
+        subprocess.run([py(), "-m", "src.infrastructure.adapters.transcribe"], cwd=repo_root())
 
 
 def run_process():
@@ -617,7 +617,7 @@ def run_process():
     if not path or not path.exists():
         console.print("[red]Transcript not found. Provide a valid path.[/red]")
         return
-    subprocess.run([py(), "3_process_script.py", str(path)], cwd=repo_root())
+    subprocess.run([py(), "-m", "src.infrastructure.adapters.process", str(path)], cwd=repo_root())
 
 
 def run_tts():
@@ -626,7 +626,7 @@ def run_tts():
     if not path or not path.exists():
         console.print("[red]Text file not found. Provide a valid path.[/red]")
         return
-    subprocess.run([py(), "4_tts.py", str(path)], cwd=repo_root())
+    subprocess.run([py(), "-m", "src.infrastructure.adapters.tts", str(path)], cwd=repo_root())
 
 
 def run_render():
@@ -681,7 +681,8 @@ def run_render():
     subprocess.run(
         [
             py(),
-            "5render_video.py",
+            "-m",
+            "src.infrastructure.adapters.render",
             "--run",
             str(sel),
             "--html",
@@ -733,7 +734,7 @@ def run_merge():
     sel = options[int(ch) - 1]
 
     console.print(f"[cyan]Merging[/cyan] [bold]{sel.name}[/bold] → uses youtube_title for output filename")
-    subprocess.run([py(), "6_merge_audio_video.py", "--run", str(sel)], cwd=repo_root())
+    subprocess.run([py(), "-m", "src.infrastructure.adapters.merge", "--run", str(sel)], cwd=repo_root())
 
 
 def main() -> int:
