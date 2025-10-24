@@ -43,6 +43,10 @@ if %errorLevel% neq 0 (
 echo ✅ Administrator rights confirmed
 echo.
 
+:: Always operate from the script directory (repo root)
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%"
+
 :: ============================================================
 :: SECTION 2: Python Installation Check
 :: ============================================================
@@ -55,7 +59,7 @@ if %errorLevel% neq 0 (
     
     :: Create temp directory
     if not exist "%TEMP%\youtubetb_install" mkdir "%TEMP%\youtubetb_install"
-    cd /d "%TEMP%\youtubetb_install"
+    pushd "%TEMP%\youtubetb_install"
     
     :: Download Python 3.11.9 installer
     echo    Downloading Python installer ^(~30 MB^)...
@@ -102,6 +106,8 @@ if %errorLevel% neq 0 (
         exit /b 1
     )
     
+    :: Return to previous directory
+    popd
     echo ✅ Python installed successfully
 ) else (
     :: Check Python version
@@ -147,7 +153,7 @@ if %errorLevel% neq 0 (
     :: Download FFmpeg
     echo    Downloading FFmpeg ^(~90 MB^)...
     echo    Please wait, this may take 2-5 minutes depending on your internet speed...
-    cd /d "%TEMP%\youtubetb_install"
+    pushd "%TEMP%\youtubetb_install"
     
     :: Download with progress indication
     powershell -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host '    Downloading ' -NoNewline; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'; Write-Host 'Done!'"
@@ -195,6 +201,9 @@ if %errorLevel% neq 0 (
     ) else (
         echo ✅ FFmpeg installed successfully
     )
+    
+    :: Return to previous directory
+    popd
 ) else (
     echo ✅ FFmpeg already installed
 )
@@ -205,10 +214,10 @@ echo.
 :: ============================================================
 echo [4/8] Checking repository...
 
-:: Check if we're already in the repo
-if exist "%~dp0\.git" (
+:: Check if we're already in the repo (prefer script directory)
+if exist "%SCRIPT_DIR%\.git" (
     echo ✅ Already inside repository
-    set "REPO_DIR=%~dp0"
+    set "REPO_DIR=%SCRIPT_DIR%"
 ) else (
     :: Check if git is installed
     git --version >nul 2>&1
@@ -251,7 +260,7 @@ cd /d "!REPO_DIR!"
 :: ============================================================
 echo [5/8] Setting up Python virtual environment...
 
-:: Create venv if it doesn't exist
+:: Create venv if it doesn't exist (in repo root)
 if not exist "venv" (
     echo    Creating virtual environment...
     python -m venv venv
@@ -266,7 +275,7 @@ if not exist "venv" (
 )
 
 :: Activate venv
-call venv\Scripts\activate.bat
+call "%SCRIPT_DIR%venv\Scripts\activate.bat"
 if %errorLevel% neq 0 (
     echo ❌ Failed to activate virtual environment!
     pause
@@ -285,7 +294,7 @@ echo    Upgrading pip...
 python -m pip install --upgrade pip --quiet
 
 :: Install requirements
-if not exist "requirements.txt" (
+if not exist "%SCRIPT_DIR%requirements.txt" (
     echo ❌ requirements.txt not found!
     pause
     exit /b 1
@@ -295,7 +304,7 @@ echo    Installing dependencies ^(~500 MB, 5-10 minutes^)...
 echo    ⏳ This will download and install 60+ Python packages...
 echo    📊 Progress will be shown below:
 echo.
-pip install -r requirements.txt
+pip install -r "%SCRIPT_DIR%requirements.txt"
 if %errorLevel% neq 0 (
     echo.
     echo ❌ Failed to install dependencies!
