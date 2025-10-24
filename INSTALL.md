@@ -42,6 +42,13 @@ install_complete.bat
 
 **Total time:** ~5-10 minutes (depending on internet speed)
 
+**After installation, to run the program:**
+```batch
+cd youtubetb-refactored
+venv\Scripts\activate
+python main.py
+```
+
 ---
 
 ## 🔐 Secrets Management
@@ -119,8 +126,10 @@ python scripts\decrypt_secrets.py --password "your_password"
 
 ## 🎯 Quick Start After Installation
 
+**IMPORTANT:** Always activate the virtual environment first!
+
 ```batch
-# Activate virtual environment
+# Activate virtual environment (REQUIRED before running)
 venv\Scripts\activate
 
 # Run the program
@@ -128,6 +137,10 @@ python main.py
 
 # Follow the interactive menu
 ```
+
+**Common Issue:** If you get `ModuleNotFoundError: No module named 'rich'`:
+- ❌ You forgot to activate venv!
+- ✅ Solution: Run `venv\Scripts\activate` first, then `python main.py`
 
 ---
 
