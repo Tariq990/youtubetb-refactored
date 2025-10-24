@@ -398,26 +398,47 @@ def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict) -> 
         "Chapters:\n" + "\n".join(segment_texts)
     )
 
-    result = _gen(model, prompt, mime_type="application/json")
-    if not result:
-        print("⚠️ AI failed to generate chapter titles, using fallback")
-        # Fallback: use generic titles
-        return [
-            {"time": _format_youtube_time(group["start"]), "title": f"Part {i+1}"}
-            for i, group in enumerate(grouped)
-        ]
+    # Retry logic: try 3 times before falling back to generic titles
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        result = _gen(model, prompt, mime_type="application/json")
+        
+        if not result:
+            print(f"⚠️ AI failed to generate chapter titles (attempt {attempt}/{max_retries})")
+            if attempt < max_retries:
+                import time
+                time.sleep(2 * attempt)  # 2s, 4s, 6s
+                continue
+            else:
+                print("⚠️ Using fallback generic titles after all retries")
+                return [
+                    {"time": _format_youtube_time(group["start"]), "title": f"Part {i+1}"}
+                    for i, group in enumerate(grouped)
+                ]
 
-    try:
-        titles = json.loads(result)
-        if isinstance(titles, list) and len(titles) == len(grouped):
-            return [
-                {"time": _format_youtube_time(group["start"]), "title": titles[i]}
-                for i, group in enumerate(grouped)
-            ]
-    except Exception as e:
-        print(f"⚠️ Failed to parse AI chapter titles: {e}")
+        try:
+            titles = json.loads(result)
+            if isinstance(titles, list) and len(titles) == len(grouped):
+                print(f"✅ Chapter titles generated successfully (attempt {attempt}/{max_retries})")
+                return [
+                    {"time": _format_youtube_time(group["start"]), "title": titles[i]}
+                    for i, group in enumerate(grouped)
+                ]
+            else:
+                print(f"⚠️ Titles count mismatch: got {len(titles) if isinstance(titles, list) else 'invalid'}, expected {len(grouped)} (attempt {attempt}/{max_retries})")
+                if attempt < max_retries:
+                    import time
+                    time.sleep(2 * attempt)
+                    continue
+        except Exception as e:
+            print(f"⚠️ Failed to parse AI chapter titles: {e} (attempt {attempt}/{max_retries})")
+            if attempt < max_retries:
+                import time
+                time.sleep(2 * attempt)
+                continue
 
-    # Fallback if parsing fails
+    # Fallback if all retries fail
+    print("⚠️ Using fallback generic titles after all parsing attempts")
     return [
         {"time": _format_youtube_time(group["start"]), "title": f"Part {i+1}"}
         for i, group in enumerate(grouped)
