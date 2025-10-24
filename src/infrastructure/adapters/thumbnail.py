@@ -564,20 +564,20 @@ def _calculate_optimal_title_size(
     # Base size using geometric scaling
     # Size inversely proportional to density and word count
     geometric_factor = max_width / (density * avg_word_len * word_count ** 0.5)
-    size = base_size * geometric_factor * 0.05  # Reduced scale factor for better fit
+    size = base_size * geometric_factor * 0.075  # Increased from 0.070 to 0.075 for slightly bigger sizes
 
     # Word count adjustments with exponential decay - FONT-SPECIFIC!
     if word_count <= 2:
-        size *= scaling.get("2_words", 1.8)  # Use profile-specific boost
+        size *= scaling.get("2_words", 1.6)
     elif word_count == 3:
         if avg_word_len > 7:
-            size *= scaling.get("3_words_long", 0.9)
+            size *= scaling.get("3_words_long", 2.0)  # Increased from 1.8 to 2.0
         elif avg_word_len > 5:
-            size *= scaling.get("3_words_medium", 1.2)
+            size *= scaling.get("3_words_medium", 1.9)  # Increased from 1.7 to 1.9
         else:
-            size *= scaling.get("3_words_short", 1.5)
+            size *= scaling.get("3_words_short", 1.1)  # Keep small for short words
     elif word_count == 4:
-        size *= scaling.get("4_words", 1.1)
+        size *= scaling.get("4_words", 1.2)
     elif word_count == 5:
         size *= scaling.get("5_words", 1.0)
     elif word_count == 6:
@@ -598,8 +598,9 @@ def _calculate_optimal_title_size(
     elif char_count < 20:
         size *= 1.1
 
-    # Apply golden ratio for final aesthetic touch
-    size = size / golden_ratio if size > 150 else size * golden_ratio * 0.8
+    # Apply golden ratio for final aesthetic touch - MODIFIED to favor longer words
+    # Don't divide by golden_ratio for already moderate sizes (allow bigger text)
+    size = size / golden_ratio if size > 250 else size * golden_ratio * 0.8  # Changed threshold from 200 to 250
 
     # Ensure size is within FONT-SPECIFIC dynamic range
     return int(max(min_size, min(max_size, size)))
@@ -870,11 +871,11 @@ def generate_thumbnail(
     run_dir: Path,
     titles_json: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 20,
+    subtitle_gap: int = 80,  # Increased spacing between title and subtitle
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
-    subtitle_font_size: int = 80,
+    subtitle_font_size: int = 160,  # Doubled from 80
     icons_size: int = 28,
     icons_gap: int = 24,
     icons_row_gap: int = 36,
@@ -1006,13 +1007,13 @@ def generate_thumbnail(
     draw = ImageDraw.Draw(base)
 
     # Layout: left cover box, right text with balanced spacing
-    left_pad = 80  # Increased to shift design right (was 60px)
-    right_pad = 40  # Decreased to shift design right (was 60px)
+    left_pad = 125  # Shift everything 45px right total (was 80px) - more visible shift
+    right_pad = 0   # Removed to give more space (was 40px)
     top_pad = 100   # Smaller cover: 520px height
     bottom_pad = 100  # Smaller cover: 520px height
     gutter = 60  # Equal to side padding for perfect symmetry (increased from 50px)
 
-    cover_box_w = 370  # Wider cover: 370px width (less cropping) - was 340px
+    cover_box_w = 500  # LARGER cover: 500px width for better visibility (was 370px)
     cover_box_h = H - top_pad - bottom_pad  # 720 - 100 - 100 = 520px
     cover_box = (left_pad, top_pad, left_pad + cover_box_w, top_pad + cover_box_h)
 
@@ -1286,9 +1287,9 @@ def generate_thumbnail(
     # SUBTITLE AUTO-SCALING: Ensure subtitle fits and is always smaller than main title
     if subtitle:
         # First, ensure subtitle is never bigger than 70% of final title size
-        # BUT never smaller than 65px for readability
+        # BUT never smaller than 100px for readability (reduced from 240px)
         max_subtitle_size = int(tsize * 0.70)  # 70% of main title (was 50%)
-        min_subtitle_size = 65  # Minimum size for readability
+        min_subtitle_size = 100  # Minimum size for readability (reduced from 240px)
         ssize = max(min_subtitle_size, min(ssize, max_subtitle_size))
         subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
 
@@ -1345,7 +1346,7 @@ def generate_thumbnail(
     total_title_height = sum(title_heights) + (len(title_heights) - 1) * line_gap if title_heights else 0
 
     # Calculate subtitle total height (all lines + gaps between them)
-    subtitle_line_gap = 10  # Small gap between subtitle lines
+    subtitle_line_gap = 30  # Gap between subtitle lines (increased from 10)
     subtitle_heights = [_text_height(subtitle_font, line, fallback=56) for line in subtitle_lines] if subtitle_lines else []
     total_subtitle_height = sum(subtitle_heights) + (len(subtitle_heights) - 1) * subtitle_line_gap if subtitle_heights else 0
 
