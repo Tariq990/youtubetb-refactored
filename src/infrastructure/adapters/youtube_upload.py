@@ -477,27 +477,97 @@ def upload_video(
     
     # === CALCULATE CHARACTER LIMIT ===
     def calc_total_chars(tag_list):
-        """Calculate total characters including commas"""
+        """
+        Calculate total characters for YouTube tags.
+        NOTE: YouTube API counts ONLY tag characters, NOT commas!
+        Each tag is separate, commas are added by YouTube UI for display only.
+        """
         if not tag_list:
             return 0
-        return sum(len(tag) for tag in tag_list) + (len(tag_list) - 1)  # -1: no comma after last
+        return sum(len(tag) for tag in tag_list)  # No comma counting!
     
     # === BUILD FINAL TAG LIST ===
     final_tags = fixed_tags.copy()
     
-    # Always add audiobook and book_summary (encouraged keywords)
-    if not any(t.lower() == "audiobook" for t in final_tags):
-        final_tags.append("audiobook")
-    if not any(t.lower() == "book_summary" for t in final_tags):
-        final_tags.append("book_summary")
+    # === CRITICAL SEO TAGS (ALWAYS ADD - HIGH PRIORITY) ===
+    # These tags have proven high search volume and relevance
+    critical_seo_tags = [
+        "audiobook",
+        "book summary",
+        "self improvement",
+        "productivity",
+        "personal development",
+        "motivational",
+        "educational",
+        "book review",
+        "self help"
+    ]
+    
+    for tag in critical_seo_tags:
+        if not any(t.lower() == tag.lower() for t in final_tags):
+            final_tags.append(tag)
+    
+    print(f"[upload] Added {len(critical_seo_tags)} critical SEO tags")
     
     reserved_chars = calc_total_chars(final_tags)
     available_chars = 500 - reserved_chars
     
-    print(f"[upload] Reserved chars (fixed + audiobook + book_summary): {reserved_chars}")
+    print(f"[upload] Reserved chars (fixed + SEO): {reserved_chars}")
     print(f"[upload] Available space for dynamic tags: {available_chars} chars")
     
-    # === FILL REMAINING SPACE WITH DYNAMIC TAGS ===
+    # === FILL REMAINING SPACE WITH DYNAMIC TAGS (SMART PRIORITIZATION) ===
+    # Sort tags by SEO value (shorter = better, common keywords = higher priority)
+    def tag_priority_score(tag: str) -> int:
+        """
+        Calculate priority score for a tag (HIGHER is better).
+        Prioritizes:
+        1. Short tags (more space for other tags)
+        2. Common SEO keywords
+        3. Book-related terms
+        """
+        score = 0
+        tag_lower = tag.lower()
+        
+        # Bonus for short tags (more efficient use of space)
+        if len(tag) <= 10:
+            score += 30
+        elif len(tag) <= 15:
+            score += 20
+        elif len(tag) <= 20:
+            score += 10
+        
+        # Bonus for high-value SEO keywords
+        high_value_keywords = {
+            "success": 25, "mindset": 25, "habits": 25, "growth": 25,
+            "wealth": 20, "leadership": 20, "communication": 20,
+            "psychology": 20, "philosophy": 20, "business": 20,
+            "finance": 20, "money": 20, "investing": 20,
+            "health": 15, "fitness": 15, "meditation": 15,
+            "creativity": 15, "writing": 15, "reading": 15,
+            "learning": 15, "memory": 15, "focus": 15,
+            "time management": 15, "goal setting": 15
+        }
+        
+        for keyword, bonus in high_value_keywords.items():
+            if keyword in tag_lower:
+                score += bonus
+                break  # Only one bonus per tag
+        
+        # Penalty for very generic tags
+        generic_words = ["tips", "guide", "intro", "basics", "overview"]
+        if any(word in tag_lower for word in generic_words):
+            score -= 10
+        
+        return score
+    
+    # Sort dynamic tags by priority (highest first)
+    tags_with_scores = [(tag, tag_priority_score(tag)) for tag in tags]
+    tags_sorted = sorted(tags_with_scores, key=lambda x: x[1], reverse=True)
+    tags = [tag for tag, score in tags_sorted]
+    
+    if debug and tags[:5]:
+        print(f"[upload] Top 5 priority tags: {[(t, tag_priority_score(t)) for t in tags[:5]]}")
+    
     added_count = 0
     for tag in tags:
         test_total = calc_total_chars(final_tags + [tag])
@@ -507,8 +577,12 @@ def upload_video(
             added_count += 1
         else:
             remaining_space = 500 - calc_total_chars(final_tags)
-            if remaining_space < 5:  # Less than 5 chars left, stop trying
+            if remaining_space < 3:  # Less than 3 chars left, stop trying
                 break
+            # Try to fit short tags in remaining space
+            if len(tag) <= remaining_space:
+                final_tags.append(tag)
+                added_count += 1
     
     final_total = calc_total_chars(final_tags)
     efficiency = (final_total / 500) * 100
@@ -531,9 +605,20 @@ def upload_video(
     final_total = calc_total_chars(final_tags)
     efficiency = (final_total / 500) * 100 if final_total else 0
 
-    print(f"✅ Final tags: {len(final_tags)} total ({added_count} dynamic + {len(fixed_tags)+2} fixed before validation)")
-    print(f"✅ Total characters: {final_total} / 500 ({efficiency:.1f}% efficiency)")
-    print(f"✅ Preview (first 10): {', '.join(final_tags[:10])}")
+    print(f"\n{'='*60}")
+    print(f"📊 TAG STATISTICS")
+    print(f"{'='*60}")
+    print(f"✅ Total tags: {len(final_tags)}")
+    print(f"   • Fixed tags: {len(fixed_tags)} (InkEcho + Book + Author)")
+    print(f"   • SEO tags: 9 (critical keywords)")
+    print(f"   • Dynamic tags: {added_count} (AI-generated + prioritized)")
+    print(f"✅ Character usage: {final_total} / 500 ({efficiency:.1f}% efficient)")
+    print(f"✅ Remaining space: {500 - final_total} chars")
+    print(f"\n📋 FINAL TAG LIST:")
+    print(f"   Fixed: {', '.join(final_tags[:len(fixed_tags)])}")
+    if len(final_tags) > len(fixed_tags):
+        print(f"   Dynamic: {', '.join(final_tags[len(fixed_tags):len(fixed_tags)+10])}...")
+    print(f"{'='*60}\n")
 
     # Use final tags
     tags = final_tags
