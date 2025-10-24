@@ -12,7 +12,7 @@
 
 ```batch
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/youtubetb-refactored.git
+git clone https://github.com/Tariq990/youtubetb-refactored.git
 cd youtubetb-refactored
 
 # 2. Run complete installation (as Administrator)
