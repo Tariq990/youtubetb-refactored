@@ -505,11 +505,14 @@ def upload_video(
         "self help"
     ]
     
+    # Add critical SEO tags (avoid duplicates - case insensitive)
+    added_seo = 0
     for tag in critical_seo_tags:
         if not any(t.lower() == tag.lower() for t in final_tags):
             final_tags.append(tag)
+            added_seo += 1
     
-    print(f"[upload] Added {len(critical_seo_tags)} critical SEO tags")
+    print(f"[upload] Added {added_seo}/{len(critical_seo_tags)} critical SEO tags (skipped duplicates)")
     
     reserved_chars = calc_total_chars(final_tags)
     available_chars = 500 - reserved_chars
@@ -622,6 +625,25 @@ def upload_video(
     if len(final_tags) > len(fixed_tags):
         print(f"   Dynamic: {', '.join(final_tags[len(fixed_tags):len(fixed_tags)+10])}...")
     print(f"{'='*60}\n")
+
+    # === FINAL DUPLICATE CHECK (SAFETY NET) ===
+    # Remove any remaining duplicates (case-insensitive)
+    seen_final = set()
+    deduped_tags = []
+    duplicates_found = []
+    
+    for tag in final_tags:
+        tag_lower = tag.lower()
+        if tag_lower not in seen_final:
+            seen_final.add(tag_lower)
+            deduped_tags.append(tag)
+        else:
+            duplicates_found.append(tag)
+    
+    if duplicates_found:
+        print(f"⚠️  REMOVED {len(duplicates_found)} DUPLICATE TAGS: {duplicates_found}")
+        final_tags = deduped_tags
+        print(f"✅ Final tag count after dedup: {len(final_tags)}\n")
 
     # Use final tags
     tags = final_tags
