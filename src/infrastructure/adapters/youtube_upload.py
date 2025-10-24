@@ -419,10 +419,12 @@ def upload_video(
         s = s.replace('\n', ' ').replace('\r', ' ')
         # Replace underscores with spaces (more natural tags)
         s = s.replace('_', ' ')
+        # Replace hyphens with spaces (YouTube doesn't allow hyphens in tags)
+        s = s.replace('-', ' ')
         # Remove commas (commas separate tags in some systems)
         s = s.replace(',', ' ')
-        # Keep only alphanumeric, spaces and hyphen
-        s = re.sub(r"[^A-Za-z0-9\-\s]", "", s)
+        # Keep only alphanumeric and spaces (NO special chars allowed by YouTube)
+        s = re.sub(r"[^A-Za-z0-9\s]", "", s)
         s = re.sub(r"\s+", ' ', s).strip()
         # Truncate to 30 chars
         if len(s) > 30:
@@ -441,7 +443,7 @@ def upload_video(
     BLOCKED_PATTERNS = {
         "subscribe", "link", "playlist", "watch", "channel", "bell", 
         "notification", "unsubscribe", "click", "like", "comment",
-        "full_audiobook"  # Specific blocked: full audiobook
+        "full audiobook", "full_audiobook"
     }
     
     # Filter problematic tags
@@ -587,8 +589,9 @@ def upload_video(
     final_total = calc_total_chars(final_tags)
     efficiency = (final_total / 500) * 100
 
-    # Final validation: only allow letters, numbers, spaces and hyphens (max 30 chars)
-    allowed_re = re.compile(r"^[A-Za-z0-9\- ]{1,30}$")
+    # Final validation: YouTube only allows letters, numbers, and spaces (max 30 chars)
+    # NO hyphens, underscores, or special characters allowed!
+    allowed_re = re.compile(r"^[A-Za-z0-9 ]{1,30}$")
     validated = []
     dropped = []
     for t in final_tags:
