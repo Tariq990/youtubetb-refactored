@@ -9,6 +9,15 @@
 ## ⚡ Quick Installation (Windows)
 
 ### One-Click Complete Setup:
+power shill 
+
+
+Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.47.0.windows.1/Git-2.47.0-64-bit.exe" -OutFile "$env:TEMP\git-installer.exe"
+
+
+Start-Process -FilePath "$env:TEMP\git-installer.exe" -ArgumentList '/VERYSILENT', '/NORESTART', '/COMPONENTS=icons,ext\reg\shellhere,assoc,assoc_sh', '/DIR="C:\Program Files\Git"', '/TASKS="addtopath"' -Wait
+
+
 
 ```batch
 # 1. Clone the repository
@@ -18,7 +27,7 @@ cd youtubetb-refactored
 # 2. Run complete installation (as Administrator)
 install_complete.bat
 ```
-
+ 
 **This will automatically:**
 - ✅ Install Python 3.11+ (if needed)
 - ✅ Install FFmpeg
