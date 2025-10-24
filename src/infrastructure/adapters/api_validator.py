@@ -252,6 +252,9 @@ class APIValidator:
         # Try each key until one works
         last_error = ""
         for i, api_key in enumerate(api_keys, 1):
+            # Use shorter timeout for first attempts to try all keys quickly
+            timeout = 10 if i == 1 else 15  # 10s for first key, 15s for others
+            
             try:
                 # Test with a simple search query
                 url = "https://www.googleapis.com/youtube/v3/search"
@@ -261,7 +264,7 @@ class APIValidator:
                     'maxResults': 1,
                     'key': api_key
                 }
-                response = requests.get(url, params=params, timeout=30)  # Increased from 10 to 30 seconds
+                response = requests.get(url, params=params, timeout=timeout)
 
                 if response.status_code == 200:
                     if len(api_keys) > 1:
@@ -283,8 +286,15 @@ class APIValidator:
                     last_error = f"Key #{i}: HTTP {response.status_code}"
                     continue
 
+            except requests.exceptions.Timeout:
+                last_error = f"Key #{i}: Timeout after {timeout}s"
+                if not self.quiet:
+                    print(f"   ⚠️ Key #{i}/{len(api_keys)}: Timeout, trying next...")
+                continue  # Try next key quickly
             except Exception as e:
                 last_error = f"Key #{i}: Connection error - {str(e)[:50]}"
+                if not self.quiet:
+                    print(f"   ⚠️ Key #{i}/{len(api_keys)}: Connection error, trying next...")
                 continue
         
         # All keys failed
