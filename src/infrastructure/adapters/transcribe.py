@@ -134,7 +134,6 @@ def run_yt_dlp_download_subs(
             _info_language = (info.get('language') or '')
     except Exception:
         try:
-            import subprocess
             cmd = ["yt-dlp", "--list-subs", video_url]
             if cookies is not None and cookies.exists():
                 cmd[1:1] = ["--cookies", str(cookies)]
@@ -252,7 +251,6 @@ def run_yt_dlp_download_subs(
         cookies_arg = []
 
     download_order = ['manual', 'auto'] if preferred_source in ('manual', 'none') else ['auto', 'manual']
-    import subprocess
     for mode in download_order:
         if use_lib:
             opts: dict[str, Any] = {
