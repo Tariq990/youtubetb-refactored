@@ -407,8 +407,9 @@ def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict) -> 
             print(f"⚠️ AI failed to generate chapter titles (attempt {attempt}/{max_retries})")
             if attempt < max_retries:
                 import time
-                wait_time = 5 * attempt  # 5s, 10s, 15s (increased from 2s, 4s, 6s)
-                print(f"⏱️ Waiting {wait_time}s before retry...")
+                # Progressive backoff: 5s, 10s, 300s (5 minutes for last retry)
+                wait_time = 300 if attempt == 2 else (5 * attempt)
+                print(f"⏱️ Waiting {wait_time}s ({wait_time//60}min {wait_time%60}s) before retry...")
                 time.sleep(wait_time)
                 continue
             else:
@@ -430,16 +431,18 @@ def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict) -> 
                 print(f"⚠️ Titles count mismatch: got {len(titles) if isinstance(titles, list) else 'invalid'}, expected {len(grouped)} (attempt {attempt}/{max_retries})")
                 if attempt < max_retries:
                     import time
-                    wait_time = 5 * attempt  # 5s, 10s, 15s
-                    print(f"⏱️ Waiting {wait_time}s before retry...")
+                    # Progressive backoff: 5s, 10s, 300s (5 minutes for last retry)
+                    wait_time = 300 if attempt == 2 else (5 * attempt)
+                    print(f"⏱️ Waiting {wait_time}s ({wait_time//60}min {wait_time%60}s) before retry...")
                     time.sleep(wait_time)
                     continue
         except Exception as e:
             print(f"⚠️ Failed to parse AI chapter titles: {e} (attempt {attempt}/{max_retries})")
             if attempt < max_retries:
                 import time
-                wait_time = 5 * attempt  # 5s, 10s, 15s
-                print(f"⏱️ Waiting {wait_time}s before retry...")
+                # Progressive backoff: 5s, 10s, 300s (5 minutes for last retry)
+                wait_time = 300 if attempt == 2 else (5 * attempt)
+                print(f"⏱️ Waiting {wait_time}s ({wait_time//60}min {wait_time%60}s) before retry...")
                 time.sleep(wait_time)
                 continue
 
