@@ -56,8 +56,9 @@ def check_book_exists(book_name: str, author_name: Optional[str] = None) -> Opti
     db = _load_database()
 
     # Normalize for comparison (case-insensitive, strip whitespace)
-    book_lower = book_name.strip().lower()
-    author_lower = author_name.strip().lower() if author_name else None
+    # Use defensive (value or "") to avoid None.strip() crashes
+    book_lower = (book_name or "").strip().lower()
+    author_lower = (author_name or "").strip().lower() if author_name is not None else None
 
     for book in db.get("books", []):
         title_match = book.get("main_title", "").strip().lower() == book_lower
@@ -153,9 +154,9 @@ def update_youtube_url(
     """
     db = _load_database()
 
-    # Find the book
-    book_lower = book_name.strip().lower()
-    author_lower = author_name.strip().lower() if author_name else None
+    # Find the book (defensive normalization)
+    book_lower = (book_name or "").strip().lower()
+    author_lower = (author_name or "").strip().lower() if author_name is not None else None
 
     for book in db.get("books", []):
         title_match = book.get("main_title", "").strip().lower() == book_lower
@@ -228,8 +229,8 @@ def remove_book(book_name: str, author_name: Optional[str] = None) -> bool:
     db = _load_database()
 
 
-    book_lower = book_name.strip().lower()
-    author_lower = author_name.strip().lower() if author_name else None
+    book_lower = (book_name or "").strip().lower()
+    author_lower = (author_name or "").strip().lower() if author_name is not None else None
 
     original_count = len(db.get("books", []))
 
@@ -264,7 +265,7 @@ def update_book_youtube_url(book_name: str, youtube_url: str) -> bool:
     """
     db = _load_database()
 
-    book_lower = book_name.strip().lower()
+    book_lower = (book_name or "").strip().lower()
     updated = False
 
     for book in db.get("books", []):
@@ -300,7 +301,7 @@ def update_book_short_url(book_name: str, short_url: str) -> bool:
     """
     db = _load_database()
 
-    book_lower = book_name.strip().lower()
+    book_lower = (book_name or "").strip().lower()
     updated = False
 
     for book in db.get("books", []):
@@ -345,9 +346,9 @@ def update_book_status(
     """
     db = _load_database()
 
-    # Find the book
-    book_lower = book_name.strip().lower()
-    author_lower = author_name.strip().lower() if author_name else None
+    # Find the book (defensive normalization)
+    book_lower = (book_name or "").strip().lower()
+    author_lower = (author_name or "").strip().lower() if author_name is not None else None
 
     updated = False
     for book in db.get("books", []):
@@ -417,9 +418,9 @@ def update_book_run_folder(
     """
     db = _load_database()
 
-    # Find the book
-    book_lower = book_name.strip().lower()
-    author_lower = author_name.strip().lower() if author_name else None
+    # Find the book (defensive normalization)
+    book_lower = (book_name or "").strip().lower()
+    author_lower = (author_name or "").strip().lower() if author_name is not None else None
 
     updated = False
     for book in db.get("books", []):
