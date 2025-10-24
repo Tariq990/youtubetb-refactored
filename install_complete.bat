@@ -60,7 +60,7 @@ if %errorLevel% neq 0 (
     :: Download Python 3.11.9 installer
     echo    Downloading Python installer (~30 MB)...
     echo    ⏳ Please wait, this may take 1-3 minutes...
-    powershell -Command "Write-Host '    Progress: ' -NoNewline; $ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $start = Get-Date; try { Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'python_installer.exe'; $elapsed = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); Write-Host \"✅ Downloaded in $elapsed seconds\" } catch { Write-Host '❌ Download failed!' -ForegroundColor Red; exit 1 }"
+    powershell -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host '    Downloading... ' -NoNewline; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'python_installer.exe'; Write-Host 'Done!'"
     
     if not exist "python_installer.exe" (
         echo ❌ Failed to download Python installer!
@@ -150,7 +150,7 @@ if %errorLevel% neq 0 (
     cd /d "%TEMP%\youtubetb_install"
     
     :: Download with progress indication
-    powershell -Command "Write-Host '    Progress: ' -NoNewline; $ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $start = Get-Date; try { Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'; $elapsed = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); Write-Host \"✅ Downloaded in $elapsed seconds\" } catch { Write-Host '❌ Download failed!' -ForegroundColor Red; exit 1 }"
+    powershell -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host '    Downloading... ' -NoNewline; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'; Write-Host 'Done!'"
     
     if %errorLevel% neq 0 (
         echo.
