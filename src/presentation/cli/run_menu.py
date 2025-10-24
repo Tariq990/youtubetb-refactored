@@ -159,14 +159,15 @@ def pause(msg: str = "Press Enter to continue...") -> None:
 def run_api_check():
     """Run comprehensive API and requirements check"""
     console.clear()
-    console.rule("[bold cyan]� API Keys Validation")
+    console.rule("[bold cyan]🔍 API Keys Validation")
     console.print("[dim]Testing all required API keys for the pipeline...[/dim]\n")
 
     try:
-        from src.infrastructure.adapters.api_validator import validate_apis_before_run
+        from src.infrastructure.adapters.api_validator import APIValidator
 
-        # Run validation
-        all_ok = validate_apis_before_run()
+        # Run validation in VERBOSE mode (not quiet)
+        validator = APIValidator(quiet=False)
+        all_ok = validator.validate_all()
 
         if all_ok:
             console.print("\n[bold green]✅ All API checks passed! Pipeline is ready to run.[/bold green]")
