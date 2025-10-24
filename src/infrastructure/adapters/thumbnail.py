@@ -8,7 +8,7 @@ import os
 import re
 
 
-SIZE = (1280, 720)  # YouTube recommended 16:9 thumbnail
+SIZE = (1920, 1080)  # Full HD 16:9 thumbnail (YouTube max recommended)
 
 
 def _load_titles(titles_json: Path, debug: bool = False) -> dict:
@@ -1478,10 +1478,10 @@ def generate_thumbnail(
 
     # Player icons removed for clean, professional design - focus on title and cover only
 
-    # Save (convert back to RGB for JPEG)
+    # Save with MAXIMUM quality (convert back to RGB for JPEG)
     try:
         base = base.convert("RGB")
-        base.save(str(output_path), quality=92)
+        base.save(str(output_path), quality=98, optimize=False, subsampling=0)
         if debug:
             print("[thumb] saved:", output_path)
         return output_path

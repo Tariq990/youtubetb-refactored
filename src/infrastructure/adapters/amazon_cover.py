@@ -102,13 +102,61 @@ def _extract_book_info(element) -> Dict:
                 if match:
                     info['reviews'] = int(match.group(1))
         
-        # Extract image URL
+        # Extract image URL with STRICT validation
         img_elem = element.query_selector('img.s-image')
         if img_elem:
             src = img_elem.get_attribute('src')
-            if src and 'amazon.com/images' in src and '_AC_' in src:
-                # Upgrade to higher quality
-                info['image_url'] = re.sub(r'_AC_U[XY]\d+_', '_AC_UL600_', src)
+            if src:
+                # CRITICAL FILTERS: Reject invalid/placeholder images
+                # 1. Must be from Amazon CDN
+                if 'amazon.com/images' not in src:
+                    return info
+                
+                # 2. Must have proper product image format (_AC_)
+                if '_AC_' not in src:
+                    return info
+                
+                # 3. REJECT placeholder images with solid backgrounds
+                # These patterns indicate non-book images:
+                # - "no-img" / "no-image" / "placeholder"
+                # - Very short image IDs (placeholders are often short)
+                # - Transparent/1x1 pixel images
+                src_lower = src.lower()
+                if any(pattern in src_lower for pattern in [
+                    'no-img', 'no-image', 'placeholder', 'blank',
+                    'transparent', '1x1', 'pixel', 'spacer'
+                ]):
+                    print(f"  [Filter] Rejected placeholder image: {src[:80]}...")
+                    return info
+                
+                # 4. REJECT images from non-book categories
+                # Amazon uses specific patterns for book covers vs. other products
+                # Book covers typically have longer image IDs
+                # Extract image ID (the part between /I/ and ._AC_)
+                img_id_match = re.search(r'/I/([A-Za-z0-9+\-_]+)\.', src)
+                if img_id_match:
+                    img_id = img_id_match.group(1)
+                    # Amazon book cover IDs are typically 10-15 chars
+                    # Very short IDs (<8 chars) are often placeholders
+                    if len(img_id) < 8:
+                        print(f"  [Filter] Rejected very short image ID (placeholder): {img_id}")
+                        return info
+                    
+                    # 5. Upgrade to HIGHEST quality (UL1000 = best quality)
+                    # Replace any size modifier with max quality
+                    high_quality_url = re.sub(r'_AC_U[XY]\d+_', '_AC_UL1000_', src)
+                    high_quality_url = re.sub(r'_SX\d+_', '_SX1000_', high_quality_url)
+                    high_quality_url = re.sub(r'_SY\d+_', '_SY1000_', high_quality_url)
+                    
+                    info['image_url'] = high_quality_url
+                    print(f"  [Filter] ✓ Valid book cover detected (ID: {img_id}, length: {len(img_id)})")
+                else:
+                    # No image ID found - use original URL with quality upgrade
+                    high_quality_url = re.sub(r'_AC_U[XY]\d+_', '_AC_UL1000_', src)
+                    info['image_url'] = high_quality_url
+                    print(f"  [Filter] ✓ Valid book cover detected (no ID pattern)")
+
+
         
         # Calculate score: rating * 10 + min(reviews/100, 10)
         # This gives priority to highly rated books with many reviews
@@ -211,26 +259,85 @@ def _get_book_cover_from_amazon_playwright(
                 
                 print(f"[Amazon] Found {len(product_divs)} results, analyzing...")
                 
-                # Extract info from first 5 results
+                # Extract info from first 5 results WITH TITLE VALIDATION
                 books = []
-                for idx, div in enumerate(product_divs[:5]):
+                for idx, div in enumerate(product_divs[:10]):  # Check more results (10 instead of 5)
+                    # CRITICAL: Validate book title FIRST before extracting image
+                    title_elem = div.query_selector('h2 a span, .a-size-medium.a-text-normal')
+                    if not title_elem:
+                        continue
+                    
+                    book_title = (title_elem.text_content() or '').strip()
+                    if not book_title:
+                        continue
+                    
+                    # FILTER 1: Title must be substantial (not just 1-2 words)
+                    title_words = book_title.split()
+                    if len(title_words) < 2:
+                        print(f"  [Filter] Skipped result #{idx+1}: Title too short ({book_title})")
+                        continue
+                    
+                    # FILTER 2: Reject non-book items (common Amazon junk)
+                    title_lower = book_title.lower()
+                    blocked_keywords = [
+                        'kindle', 'case', 'cover', 'stand', 'holder', 
+                        'bag', 'sleeve', 'skin', 'protector', 'screen',
+                        'charger', 'cable', 'adapter', 'mount', 'dock',
+                        'light', 'lamp', 'clip', 'bookmark', 'pen'
+                    ]
+                    if any(keyword in title_lower for keyword in blocked_keywords):
+                        print(f"  [Filter] Skipped result #{idx+1}: Non-book item ({book_title})")
+                        continue
+                    
+                    # FILTER 3: Title relevance check (fuzzy match with search query)
+                    # At least 30% of search words should appear in result title
+                    search_words = set(title.lower().split())
+                    title_words_set = set(title_lower.split())
+                    common_words = search_words.intersection(title_words_set)
+                    relevance = len(common_words) / len(search_words) if search_words else 0
+                    
+                    if relevance < 0.3:  # Less than 30% match
+                        print(f"  [Filter] Skipped result #{idx+1}: Low relevance ({relevance:.0%}) - {book_title}")
+                        continue
+                    
+                    # Extract full book info (rating, reviews, image)
                     info = _extract_book_info(div)
+                    
                     if info['image_url']:
                         info['position'] = idx
+                        info['title'] = book_title
+                        info['relevance'] = relevance
                         books.append(info)
-                        print(f"  Book #{idx+1}: Rating={info['rating']:.1f}, Reviews={info['reviews']}, Score={info['score']:.1f}")
+                        print(f"  Book #{idx+1}: {book_title[:50]}")
+                        print(f"    Rating={info['rating']:.1f}, Reviews={info['reviews']}, Relevance={relevance:.0%}, Score={info['score']:.1f}")
+
                 
                 if not books:
-                    print("[Amazon] No valid books with covers found")
+                    print("[Amazon] No valid books with covers found after filtering")
                     browser.close()
                     continue
                 
-                # Sort by score (rating + reviews)
-                books.sort(key=lambda x: x['score'], reverse=True)
+                # Sort by COMPOSITE score: (relevance * 50) + (rating * 10) + min(reviews/100, 10)
+                # This prioritizes: relevance > rating > review count
+                for book in books:
+                    book['composite_score'] = (
+                        book['relevance'] * 50 +  # Relevance is MOST important
+                        book['rating'] * 10 +      # Then rating
+                        min(book['reviews'] / 100, 10)  # Then reviews
+                    )
+                
+                books.sort(key=lambda x: x['composite_score'], reverse=True)
                 
                 # Select best book
                 best_book = books[0]
-                print(f"[Amazon] ✓ Selected best book: Rating={best_book['rating']:.1f}, Reviews={best_book['reviews']}, Position=#{best_book['position']+1}")
+                print(f"\n[Amazon] ✅ SELECTED BEST MATCH:")
+                print(f"  Title: {best_book.get('title', 'N/A')[:60]}")
+                print(f"  Rating: {best_book['rating']:.1f} ⭐")
+                print(f"  Reviews: {best_book['reviews']:,}")
+                print(f"  Relevance: {best_book['relevance']:.0%}")
+                print(f"  Position: #{best_book['position']+1}")
+                print(f"  Composite Score: {best_book['composite_score']:.1f}")
+
                 
                 browser.close()
                 return best_book['image_url']

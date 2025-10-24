@@ -728,14 +728,34 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
     # Combine both: basic tags first, then AI tags
     all_tags = basic_tags + ai_tags
 
+
     # Remove duplicates while preserving order
     seen = set()
     tags = []
     for tag in all_tags:
+        tag = tag.strip()
         tag_lower = tag.lower()
-        if tag_lower not in seen:
-            seen.add(tag_lower)
-            tags.append(tag)
+        if not tag or tag_lower in seen:
+            continue
+        # Remove forbidden characters (YouTube: no quotes, no newlines, no commas)
+        tag = re.sub(r'["\n\r,]', '', tag)
+        # Truncate to 30 chars max
+        tag = tag[:30]
+        # Remove if empty after cleaning
+        if not tag:
+            continue
+        seen.add(tag_lower)
+        tags.append(tag)
+
+    # Enforce total tags length <= 500 chars (YouTube API limit)
+    total = 0
+    filtered_tags = []
+    for tag in tags:
+        if total + len(tag) + (1 if filtered_tags else 0) > 500:
+            break
+        filtered_tags.append(tag)
+        total += len(tag) + (1 if filtered_tags else 0)  # +1 for comma/sep
+    tags = filtered_tags
 
     # Generate thumbnail elements: hook/sub/image word
     hook, sub, img = _generate_thumbnail_elements(model, book_name, author)
