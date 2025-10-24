@@ -10,7 +10,8 @@ import requests
 import json
 from pathlib import Path
 from cryptography.fernet import Fernet
-import hashlib
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 
 
@@ -18,15 +19,38 @@ import base64
 ENCRYPTION_PASSWORD = "2552025"
 
 
-def get_encryption_key(password: str) -> bytes:
-    """Derive encryption key from password using SHA256"""
-    return base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
+def derive_key_from_password(password: str, salt: bytes) -> bytes:
+    """
+    Derive a Fernet encryption key from a password using PBKDF2.
+    MATCHES encrypt_secrets.py and decrypt_secrets.py implementation.
+    
+    Args:
+        password: User password
+        salt: Random salt bytes (16 bytes recommended)
+        
+    Returns:
+        32-byte encryption key suitable for Fernet
+    """
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,  # High iteration count for security (matches encrypt_secrets.py)
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+    return key
 
 
 def encrypt_file(file_path: Path, password: str) -> bool:
-    """Encrypt a single file with password"""
+    """
+    Encrypt a single file with password using PBKDF2 (compatible with decrypt_secrets.py)
+    """
     try:
-        key = get_encryption_key(password)
+        # Generate random salt (16 bytes)
+        salt = os.urandom(16)
+        
+        # Derive key using PBKDF2
+        key = derive_key_from_password(password, salt)
         fernet = Fernet(key)
         
         # Read original file
@@ -36,13 +60,14 @@ def encrypt_file(file_path: Path, password: str) -> bool:
         # Encrypt
         encrypted = fernet.encrypt(data)
         
-        # Save to encrypted folder
+        # Save to encrypted folder with salt prepended
         enc_dir = file_path.parent.parent / "secrets_encrypted"
         enc_dir.mkdir(exist_ok=True)
         enc_file = enc_dir / f"{file_path.name}.enc"
         
         with open(enc_file, 'wb') as f:
-            f.write(encrypted)
+            f.write(salt)  # First 16 bytes are the salt
+            f.write(encrypted)  # Rest is encrypted content
         
         print(f"   ✅ Encrypted: {file_path.name}")
         return True
