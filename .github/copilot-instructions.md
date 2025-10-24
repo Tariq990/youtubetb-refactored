@@ -1,53 +1,248 @@
-# YouTubeTB - AI Agent Instructions
+# YouTubeTB - Quick Reference for AI Agent
 
-## Project Overview
-**YouTubeTB** is an automated YouTube book summary video generator. It transforms Arabic book summaries from YouTube into polished English videos with AI-enhanced narration, visual effects, and automatic upload.
+## 🎯 What This Does
+Automated YouTube book summary video generator: Arabic YouTube → English videos with AI narration.
 
-**Core Flow**: Search YouTube → Transcribe → AI Process (clean/translate/scriptify) → TTS → Render → YouTube Metadata → Merge → Thumbnail → Upload → Shorts Generator → Short Upload
+## 🚀 Pipeline (11 Stages)
+1. **Search** → YouTube API (15-90 min videos)
+2. **Transcribe** → yt-dlp extract Arabic text
+3. **Process** → Gemini AI (clean/translate/script)
+4. **TTS** → OpenAI.fm audio (Playwright scraping)
+5. **Render** → FFmpeg video + subtitles
+6. **YouTube Metadata** → AI title/description
+7. **Merge** → Combine video+audio
+8. **Thumbnail** → PIL 1920x1080 (8 pro colors)
+9. **Upload** → YouTube OAuth
+10. **Shorts** → 9:16 vertical 60s video
+11. **Short Upload** → Shorts to YouTube
 
-**Complete Pipeline (10 Stages)**:
-1. **Search** - Find Arabic book summary videos (15-90 min)
-2. **Transcribe** - Extract Arabic text from video
-3. **Process** - Clean, translate to English, scriptify for narration
-4. **TTS** - Convert script to high-quality audio (OpenAI.fm)
-5. **Render** - Create video with animated subtitles + book cover
-6. **YouTube Metadata** - Generate SEO-optimized title/description
-7. **Merge** - Combine video + audio into final MP4
-8. **Thumbnail** - Generate custom 16:9 thumbnail (multi-font system)
-9. **Upload** - Upload main video to YouTube (OAuth)
-10. **Shorts Generator** - Create 9:16 vertical short (60s max)
-11. **Short Upload** - Upload short to YouTube
-
-## Architecture
-
-### Layered Structure (Hexagonal Architecture)
+## 📂 Key Files (Quick Access)
 ```
-src/
-├── presentation/cli/          # User interface (Typer CLI, run_menu.py)
-├── application/              # Use cases (currently minimal)
-├── infrastructure/adapters/  # External service integrations
-│   ├── search.py            # YouTube Data API (15-90 min filter)
-│   ├── transcribe.py        # yt-dlp + youtube-transcript-api
-│   ├── process.py           # Gemini AI (clean/translate/script)
-│   ├── tts.py              # OpenAI.fm scraper (Playwright)
-│   ├── render.py           # FFmpeg video composition
-│   ├── youtube_metadata.py # AI-generated YouTube title/description
-│   ├── merge_av.py         # FFmpeg audio+video merger
-│   ├── thumbnail.py        # PIL-based thumbnail generator (multi-font)
-│   ├── short_thumbnail.py  # Vertical 9:16 thumbnail for Shorts
-│   ├── youtube_upload.py   # OAuth + YouTube API v3
-│   ├── shorts_generator.py # Vertical video creator (60s max)
-│   ├── database.py         # Book tracking & duplicate detection
-│   ├── cookie_manager.py   # YouTube cookies handler (age-restricted videos)
-│   └── api_validator.py    # Preflight checks for all APIs
-├── core/domain/             # Business entities (exceptions mainly)
-└── shared/                  # Cross-cutting (logging, errors)
+src/infrastructure/adapters/
+├── search.py          # YouTube search (15-90 min filter)
+├── transcribe.py      # Extract text
+├── process.py         # AI translation (Gemini)
+├── tts.py            # OpenAI.fm TTS (ffprobe only, no Mutagen)
+├── render.py         # Video creation
+├── youtube_metadata.py # SEO title/description
+├── merge_av.py       # Final MP4
+├── thumbnail.py      # 8-color smart palette
+├── youtube_upload.py # OAuth upload
+├── shorts_generator.py # Vertical shorts
+└── database.py       # Duplicate detection + YouTube sync
+
+src/presentation/cli/
+└── run_pipeline.py   # Main orchestrator (duplicate check FIRST)
 ```
 
-**Key Principle**: Adapters are independent. Each can run standalone via `main()` for testing.
+## ⚡ Critical Code Patterns
 
-### Critical Paths
-- **repo_root**: Always `Path(__file__).resolve().parents[N]` where N varies by file depth
+### repo_root Calculation
+```python
+# ALWAYS use correct depth:
+repo_root = Path(__file__).resolve().parents[3]  # For run_pipeline.py
+repo_root = Path(__file__).resolve().parents[2]  # For adapters/
+```
+
+### Duplicate Detection (FIXED v2.2.2)
+```python
+# CORRECT ORDER (check BEFORE add):
+existing = check_book_exists(book_name, author_name)
+if existing and status == 'uploaded':
+    shutil.rmtree(d["root"])  # Delete empty folder
+    return  # Stop
+if not existing:
+    add_book(...)  # Only add if NEW
+```
+
+### Database NoneType Protection (FIXED v2.2.1)
+```python
+# ALWAYS check None before .strip():
+db_title = book.get("main_title")
+if not db_title:
+    continue
+title_match = str(db_title).strip().lower() == book_lower
+```
+
+### TTS Duration (FIXED v2.2.3)
+```python
+# Use ffprobe ONLY (no Mutagen):
+result = subprocess.run(["ffprobe", "-v", "error", ...])
+duration = float(result.stdout.strip())
+# Silent success - no spam logs
+```
+
+### Thumbnail Subtitle Colors (FIXED v2.2.4)
+```python
+PROFESSIONAL_SUBTITLE_COLORS = [
+    (255, 215, 0),    # Gold
+    (255, 140, 0),    # Dark Orange
+    (255, 69, 0),     # Red-Orange
+    (50, 205, 50),    # Lime Green
+    (0, 191, 255),    # Deep Sky Blue
+    (147, 112, 219),  # Medium Purple
+    (255, 20, 147),   # Deep Pink
+    (255, 255, 100),  # Bright Yellow
+]
+# Pick best contrast with background automatically
+```
+
+## 🔧 Common Commands
+```bash
+# Run pipeline
+python main.py  # Interactive menu
+
+# Batch processing
+python main.py  # Option 2 (books.txt with 20+ books)
+
+# Resume failed run
+python main.py  # Option 13
+
+# Test individual stage
+python -m src.infrastructure.adapters.search "العادات الذرية"
+python -m src.infrastructure.adapters.thumbnail --run "runs/latest" --debug
+
+# Database sync from YouTube
+python -c "from src.infrastructure.adapters.database import sync_database_from_youtube; sync_database_from_youtube()"
+```
+
+## 🐛 Recent Fixes (v2.2.x)
+
+### v2.2.4 (2025-10-24)
+- **Thumbnail colors**: 8 professional colors with auto-contrast selection
+- **TTS logs**: Removed Mutagen spam (use ffprobe only)
+
+### v2.2.3 (2025-10-24)
+- **TTS performance**: Removed Mutagen completely (ffprobe direct)
+- **Silent operation**: No more "⚠️ Mutagen failed" warnings
+
+### v2.2.2 (2025-10-24)
+- **Empty folders**: Auto-delete when duplicate detected
+- **Duplicate check**: Reversed order (check BEFORE add)
+- **Clean runs/**: No empty timestamp folders
+
+### v2.2.1 (2025-10-24)
+- **Database NoneType**: Fixed 7 functions with defensive None checks
+- **Graceful handling**: Skip None entries instead of crash
+
+## 📋 books.txt Format
+```
+العادات الذرية
+الأب الغني والأب الفقير
+فن اللامبالاة
+...
+```
+- One book per line
+- Arabic or English
+- 20 books currently (mixed categories)
+
+## 🗂️ File Structure
+```
+runs/YYYY-MM-DD_HH-MM-SS_Book-Name/
+├── summary.json         # Pipeline state
+├── transcribe.txt       # Arabic source
+├── cleaned.txt          # AI cleaned
+├── translated.txt       # English
+├── script.txt           # Narration script
+├── narration.mp3        # Final audio
+├── video_snap.mp4       # Silent video
+├── output.titles.json   # YouTube metadata
+├── thumbnail.jpg        # 1920x1080
+├── bookcover.jpg        # From Google Books/Amazon
+├── [YouTube Title].mp4  # Final upload
+├── short_video.mp4      # Vertical short
+└── pipeline.log         # Full logs
+```
+
+## 🔑 Secrets Structure
+```
+secrets/
+├── api_key.txt          # Gemini API
+├── api_keys.txt         # YouTube Data API
+├── client_secret.json   # OAuth credentials
+├── token.json           # OAuth token (auto-refresh)
+└── cookies.txt          # YouTube cookies (age-restricted)
+```
+
+## 🎨 Config Files
+```
+config/
+├── prompts.json         # AI prompts (clean/translate/script)
+├── settings.json        # Model, fonts, YouTube sync
+└── template.html        # Metadata template
+```
+
+### settings.json Quick Ref
+```json
+{
+  "gemini_model": "gemini-2.5-flash-latest",
+  "thumbnail_font": "Bebas Neue",
+  "youtube_sync": {
+    "enabled": true,
+    "channel_id": "UCQyOYMG7mH7kwM5O5kMF6tQ"
+  }
+}
+```
+
+## ⚠️ Known Issues
+1. **Long videos (>90 min)**: Gemini truncates → Use filter in search.py
+2. **Cookies required**: Age-restricted videos need `cookies.txt`
+3. **ffprobe required**: Critical for TTS timestamps
+4. **Playwright setup**: Run `playwright install chromium`
+
+## 🧪 Testing
+```bash
+# Database tests
+python scripts\test_db_none_fix.py
+python scripts\test_duplicate_folder_cleanup.py
+
+# Font profiles
+python test_font_profiles.py
+
+# YouTube sync
+python scripts/test_sync.py
+```
+
+## 📊 Database Schema
+```json
+{
+  "books": [
+    {
+      "main_title": "Book Name",
+      "author_name": "Author",
+      "status": "processing|uploaded|done",
+      "youtube_url": "https://youtube.com/watch?v=...",
+      "youtube_short_url": "https://youtube.com/watch?v=...",
+      "run_folder": "2025-10-24_XX-XX-XX_Book-Name",
+      "date_added": "2025-10-24T18:00:00"
+    }
+  ]
+}
+```
+
+## 🎯 AI Agent Guidelines
+
+### When User Reports Error
+1. **Check latest logs**: `runs/latest/pipeline.log`
+2. **Check summary.json**: See which stage failed
+3. **Run stage standalone**: `python -m src.infrastructure.adapters.STAGE`
+4. **Check database.json**: For duplicate/NoneType issues
+
+### When User Wants New Feature
+1. **Identify stage**: Which adapter needs modification?
+2. **Check existing patterns**: Follow defensive coding (None checks)
+3. **Test standalone**: Run adapter's `main()` before integration
+4. **Update this file**: Add to Recent Fixes section
+
+### When User Asks "Why?"
+1. **Search this file first**: Use Ctrl+F
+2. **Check Recent Fixes**: Likely documented
+3. **Read code comments**: Adapters have inline docs
+4. **Check docs/**: Detailed documentation exists
+
+---
+
+**Last Updated**: 2025-10-24 (Optimized for AI agent speed)
   - `process.py`: `parents[2]` (src/infrastructure/adapters → root)
   - `run_pipeline.py`: `parents[3]` (src/presentation/cli → root)
 - **Secrets**: Prioritize `secrets/` folder over root (e.g., `secrets/api_key.txt` > `api_key.txt`)
