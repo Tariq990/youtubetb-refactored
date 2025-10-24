@@ -68,12 +68,15 @@ if %errorLevel% neq 0 (
         exit /b 1
     )
     
-    :: Install Python silently with PATH
+    :: Install Python with interactive installer (more reliable)
     echo    Installing Python 3.11.9...
-    python_installer.exe /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1 Include_test=0
+    echo    ⚠️  IMPORTANT: Check "Add Python to PATH" during installation!
+    echo.
+    start /wait python_installer.exe InstallAllUsers=1 PrependPath=1 Include_pip=1 Include_test=0
     
     :: Wait for installation
-    timeout /t 10 /nobreak >nul
+    echo    Waiting for installation to complete...
+    timeout /t 15 /nobreak >nul
     
     :: Refresh environment variables
     echo    Refreshing environment variables...
@@ -82,8 +85,18 @@ if %errorLevel% neq 0 (
     :: Verify installation
     python --version >nul 2>&1
     if %errorLevel% neq 0 (
-        echo ❌ Python installation failed!
-        echo Please install Python 3.11+ manually from: https://www.python.org/downloads/
+        echo.
+        echo ❌ Python installation failed or PATH not updated!
+        echo.
+        echo 📋 Manual Installation Steps:
+        echo    1. Close this window
+        echo    2. Double-click the installer at: %TEMP%\youtubetb_install\python_installer.exe
+        echo    3. ✅ CHECK "Add Python to PATH" during installation
+        echo    4. Complete the installation
+        echo    5. Restart this script
+        echo.
+        echo Or download from: https://www.python.org/downloads/
+        echo.
         pause
         exit /b 1
     )
