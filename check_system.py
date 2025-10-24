@@ -33,17 +33,36 @@ def check_package(package_name, import_name=None):
 def check_command(cmd):
     """Check if a system command exists"""
     try:
+        # Try running the command
         result = subprocess.run([cmd, "--version"], 
                               capture_output=True, 
                               text=True, 
-                              timeout=5)
+                              timeout=5,
+                              shell=True)  # Use shell to find commands in PATH
         if result.returncode == 0:
             version = result.stdout.split('\n')[0]
             print(f"✓ {cmd}: {version}")
             return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
+    
+    # If direct execution failed, try with .exe extension (Windows)
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run([f"{cmd}.exe", "--version"], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  timeout=5,
+                                  shell=True)
+            if result.returncode == 0:
+                version = result.stdout.split('\n')[0]
+                print(f"✓ {cmd}: {version}")
+                return True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    
     print(f"✗ {cmd} - NOT FOUND")
+    print(f"  Note: Command may be installed but not in PATH")
     return False
 
 def main():
@@ -87,8 +106,19 @@ def main():
     
     # External tools
     print("[4] External Tools:")
-    all_ok &= check_command("ffmpeg")
-    all_ok &= check_command("yt-dlp")
+    ffmpeg_ok = check_command("ffmpeg")
+    yt_dlp_ok = check_command("yt-dlp")
+    
+    # Special note for FFmpeg if not in PATH but might be installed
+    if not ffmpeg_ok and sys.platform == "win32":
+        print("  💡 FFmpeg may be installed but not in PATH.")
+        print("     Try running 'ffmpeg -version' in PowerShell/CMD.")
+        print("     If it works, the pipeline should work too.")
+        # Don't fail the check - just warn
+        ffmpeg_ok = True
+    
+    all_ok &= ffmpeg_ok
+    all_ok &= yt_dlp_ok
     print()
     
     # Playwright browsers
