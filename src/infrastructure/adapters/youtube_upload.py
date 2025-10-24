@@ -349,6 +349,37 @@ def upload_video(
 
     tags: List[str] = meta.get("TAGS") or []
 
+    # Defensive: ensure tags is a list of strings.
+    # Some producers may write TAGS as a single comma-separated string; handle that.
+    try:
+        if isinstance(tags, str):
+            s = tags.strip()
+            # If it looks like a JSON array, try to parse it
+            if s.startswith("[") and s.endswith("]"):
+                try:
+                    try:
+                        import json as _json
+                        parsed = _json.loads(s)
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, (list, tuple)):
+                        tags = [str(t).strip() for t in parsed if t is not None]
+                    else:
+                        tags = [s]
+                except Exception:
+                    # Fallback: split by comma
+                    tags = [t.strip() for t in s.split(",") if t.strip()]
+            else:
+                tags = [t.strip() for t in s.split(",") if t.strip()]
+        elif isinstance(tags, (set, tuple)):
+            tags = [str(t).strip() for t in list(tags)]
+        else:
+            # Ensure all elements are strings and stripped
+            tags = [str(t).strip() for t in tags if t is not None]
+    except Exception:
+        # Worst case, fallback to empty list
+        tags = []
+
     # === FIXED TAGS (ALWAYS FIRST) ===
     brand_tag = "InkEcho"
     book_title = meta.get("main_title", "").strip()
@@ -374,6 +405,38 @@ def upload_video(
     # Keep tags as-is (YouTube accepts spaces in tags)
     print(f"[upload] Processing {len(tags)} dynamic tags (keeping original format)")
     
+    # === SANITIZE TAGS ===
+    def _sanitize_tag_for_api(t: str) -> Optional[str]:
+        if not t:
+            return None
+        try:
+            s = str(t)
+        except Exception:
+            return None
+        # Remove control characters and normalize whitespace
+        s = re.sub(r"[\x00-\x1F\x7F]+", "", s)
+        s = s.replace('"', '').replace("'", '')
+        s = s.replace('\n', ' ').replace('\r', ' ')
+        # Replace underscores with spaces (more natural tags)
+        s = s.replace('_', ' ')
+        # Remove commas (commas separate tags in some systems)
+        s = s.replace(',', ' ')
+        # Keep only alphanumeric, spaces and hyphen
+        s = re.sub(r"[^A-Za-z0-9\-\s]", "", s)
+        s = re.sub(r"\s+", ' ', s).strip()
+        # Truncate to 30 chars
+        if len(s) > 30:
+            s = s[:30].rstrip()
+        return s if s else None
+
+    # Apply sanitization to dynamic tags list
+    sanitized = []
+    for t in tags:
+        st = _sanitize_tag_for_api(t)
+        if st:
+            sanitized.append(st)
+    tags = sanitized
+
     # === REMOVE PROBLEMATIC TAGS ===
     BLOCKED_PATTERNS = {
         "subscribe", "link", "playlist", "watch", "channel", "bell", 
@@ -449,11 +512,29 @@ def upload_video(
     
     final_total = calc_total_chars(final_tags)
     efficiency = (final_total / 500) * 100
-    
-    print(f"✅ Final tags: {len(final_tags)} total ({added_count} dynamic + {len(fixed_tags)+2} fixed)")
+
+    # Final validation: only allow letters, numbers, spaces and hyphens (max 30 chars)
+    allowed_re = re.compile(r"^[A-Za-z0-9\- ]{1,30}$")
+    validated = []
+    dropped = []
+    for t in final_tags:
+        if allowed_re.match(t):
+            validated.append(t)
+        else:
+            dropped.append(t)
+
+    if dropped:
+        print(f"[upload] Dropped {len(dropped)} invalid tags: {dropped}")
+
+    final_tags = validated
+
+    final_total = calc_total_chars(final_tags)
+    efficiency = (final_total / 500) * 100 if final_total else 0
+
+    print(f"✅ Final tags: {len(final_tags)} total ({added_count} dynamic + {len(fixed_tags)+2} fixed before validation)")
     print(f"✅ Total characters: {final_total} / 500 ({efficiency:.1f}% efficiency)")
     print(f"✅ Preview (first 10): {', '.join(final_tags[:10])}")
-    
+
     # Use final tags
     tags = final_tags
 
