@@ -531,14 +531,10 @@ def _generate_tags(book_title: str, author_name: Optional[str]) -> list[str]:
         f"{bt}",
         f"{bt} summary",
         f"{bt} audiobook",
-        f"{bt} full audiobook",
     ]
     if an:
         tags.extend([
             f"{bt} BY {an}",
-            f"{bt} BY {an} summary",
-            f"{bt} BY {an} audiobook",
-            f"{bt} BY {an} full audiobook",
             f"{an}",
         ])
     # Filter out any empty entries just in case

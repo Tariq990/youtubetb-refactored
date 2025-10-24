@@ -108,6 +108,10 @@ python -c "from src.infrastructure.adapters.database import sync_database_from_y
 
 ## 🐛 Recent Fixes (v2.2.x)
 
+### v2.2.6 (2025-10-24)
+- **YouTube tags**: Fixed "invalid video keywords" error
+- **Tag cleanup**: Removed long tags that exceed 30-char limit when truncated
+
 ### v2.2.4 (2025-10-24)
 - **Thumbnail colors**: 8 professional colors with auto-contrast selection
 - **TTS logs**: Removed Mutagen spam (use ffprobe only)
