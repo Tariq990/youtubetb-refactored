@@ -334,10 +334,6 @@ def _cleanup_successful_run(run_dir: Path, debug: bool = False):
         run_dir: Path to the run directory
         debug: Print debug messages
     """
-    # TEMPORARY DISABLE: Keep all run folders (do not delete "done" books)
-    print("🔒 Cleanup disabled temporarily - keeping all run folders")
-    return
-
     from src.infrastructure.adapters.database import check_book_exists
 
     try:
@@ -364,15 +360,17 @@ def _cleanup_successful_run(run_dir: Path, debug: bool = False):
 
         if book_entry and book_entry.get("status") == "done":
             # Success! Delete the run folder
-            print(f"\n🗑️ Book '{book_name}' successfully uploaded → Cleaning up run folder...")
+            print(f"\n🗑️ Book '{book_name}' successfully completed → Cleaning up run folder...")
 
-            # Delete temp files first
+            # Delete temp files first (TTS segments, etc.)
             _cleanup_temp_files(run_dir, debug=debug)
 
             # Delete the entire run directory
             try:
+                import shutil
                 shutil.rmtree(run_dir)
                 print(f"✅ Deleted run folder: {run_dir.name}")
+                print(f"💾 Disk space freed! Book metadata saved in database.json")
             except Exception as e:
                 print(f"⚠️ Failed to delete run folder {run_dir.name}: {e}")
 
