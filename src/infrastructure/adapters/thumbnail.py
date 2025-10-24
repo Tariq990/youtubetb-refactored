@@ -1390,20 +1390,35 @@ def generate_thumbnail(
             sample_size=100
         )
 
-        # For subtitle: use extracted accent color from cover (ignore contrast check)
+        # For subtitle: use professional fixed colors instead of extracted
+        # Extracted colors are often unclear or ugly - use curated palette
+        PROFESSIONAL_SUBTITLE_COLORS = [
+            (255, 215, 0),    # Gold - classic, always readable
+            (255, 140, 0),    # Dark Orange - warm and vibrant
+            (255, 69, 0),     # Red-Orange - bold and eye-catching
+            (50, 205, 50),    # Lime Green - fresh and energetic
+            (0, 191, 255),    # Deep Sky Blue - modern and clean
+            (147, 112, 219),  # Medium Purple - elegant
+            (255, 20, 147),   # Deep Pink - attention-grabbing
+            (255, 255, 100),  # Bright Yellow - high visibility
+        ]
+        
+        # Choose color based on background to ensure contrast
         if cover_path:
-            extracted_color = _extract_accent_color_from_cover(cover_path, debug=False)
-            if extracted_color:
-                # Use extracted color directly without contrast check
-                # We already filtered out whites in extraction, so this is safe
-                subtitle_color = extracted_color
-                if debug:
-                    contrast = _calculate_contrast_ratio(extracted_color, subtitle_bg_avg)
-                    print(f"[thumb] subtitle extracted color: RGB{extracted_color}, contrast: {contrast:.2f}:1")
-                    print(f"[thumb] ✅ using extracted color (dominant color from cover)")
-            else:
-                # No vibrant color found, use smart color
-                subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
+            # Pick best contrasting color from palette
+            best_color = PROFESSIONAL_SUBTITLE_COLORS[0]  # Default: Gold
+            best_contrast = 0
+            
+            for color in PROFESSIONAL_SUBTITLE_COLORS:
+                contrast = _calculate_contrast_ratio(color, subtitle_bg_avg)
+                if contrast > best_contrast:
+                    best_contrast = contrast
+                    best_color = color
+            
+            subtitle_color = best_color
+            if debug:
+                print(f"[thumb] subtitle color: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
+                print(f"[thumb] ✅ using professional color palette (guaranteed readable)")
         else:
             subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
 

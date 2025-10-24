@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 from playwright.sync_api import sync_playwright
-from mutagen.mp3 import MP3
 
 # Try to import whisper for forced alignment (optional dependency)
 try:
@@ -387,51 +386,37 @@ def _save_timestamps(segments_dir: Path, run_dir: Path) -> bool:
                 texts = [row.get("text", "") for row in reader]
 
         for idx, mp3_file in enumerate(mp3_files):
-            # Get duration using multiple fallback methods
+            # Get duration using ffprobe (most reliable for OpenAI.fm MP3s)
             duration = None
 
-            # Method 1: Try mutagen (primary method)
             try:
-                audio = MP3(mp3_file)
-                duration = audio.info.length
+                import subprocess
+                result = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", str(mp3_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=True
+                )
+                
+                if result.stdout.strip():
+                    duration = float(result.stdout.strip())
+                    # Silent success - only show errors
+                else:
+                    print(f"⚠️ ffprobe returned empty output for {mp3_file.name}")
+                    
+            except subprocess.CalledProcessError as e:  # type: ignore[possibly-unbound]
+                print(f"⚠️ ffprobe failed for {mp3_file.name}: exit code {e.returncode}")
+            except subprocess.TimeoutExpired:  # type: ignore[possibly-unbound]
+                print(f"⏱️ ffprobe timed out for {mp3_file.name}")
             except Exception as e:
-                print(f"⚠️ Mutagen failed for {mp3_file.name}: {e}")
+                print(f"⚠️ ffprobe exception for {mp3_file.name}: {e}")
 
-            # Method 2: Fallback to ffprobe if mutagen fails
+            # If we get here with no duration, all methods failed
             if duration is None:
-                try:
-                    import subprocess
-                    # CRITICAL FIX: check=True for ffprobe reliability
-                    result = subprocess.run(
-                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                         "-of", "default=noprint_wrappers=1:nokey=1", str(mp3_file)],
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                        check=True
-                    )
-                    # Debug output (only if check=True didn't raise exception)
-                    if not result.stdout.strip():
-                        print(f"[DEBUG] ffprobe returned empty output for {mp3_file.name}")
-                        print(f"  Stderr: '{result.stderr}'")
-
-                    # With check=True, we only get here if ffprobe succeeded
-                    if result.stdout.strip():
-                        duration = float(result.stdout.strip())
-                        print(f"✓ Used ffprobe for {mp3_file.name}: {duration:.2f}s")
-                except subprocess.CalledProcessError as e:  # type: ignore[possibly-unbound]
-                    print(f"⚠️ ffprobe failed for {mp3_file.name}: exit code {e.returncode}")
-                except subprocess.TimeoutExpired:  # type: ignore[possibly-unbound]
-                    print(f"⏱️ ffprobe timed out for {mp3_file.name}")
-                except Exception as e:
-                    print(f"⚠️ ffprobe exception for {mp3_file.name}: {e}")
-
-            # Method 3: REMOVED - File size estimation was unreliable
-            # If we get here, all reliable methods failed
-            if duration is None:
-                print(f"❌ CRITICAL: All methods failed for {mp3_file.name}")
-                print(f"   Cannot determine duration. Skipping this segment.")
-                print(f"   This will cause timestamp misalignment!")
+                print(f"❌ CRITICAL: Could not determine duration for {mp3_file.name}")
+                print(f"   Skipping this segment - will cause timestamp misalignment!")
                 continue
 
             # Get corresponding text

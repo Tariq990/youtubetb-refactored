@@ -833,12 +833,7 @@ def _run_internal(
                 playlist = _get_book_playlist(model, book_name, author_name, prompts)
                 print(f"[early_meta] ✅ Playlist: {playlist}")
 
-                # CRITICAL: Add to database immediately after getting book name
-                # This ensures book is tracked from the start of pipeline
-                add_book(book_name, author_name, d["root"].name, status="processing", playlist=playlist)
-                print(f"[early_meta] ✅ Added to database: {book_name}")
-
-                # Check if book already exists in database
+                # CRITICAL: Check if book already exists BEFORE adding to database
                 existing = check_book_exists(book_name, author_name)
                 status = existing.get('status') if existing else None
                 reused_old_folder = False  # Track if we reused an existing folder
@@ -855,6 +850,15 @@ def _run_internal(
                         console.print(f"[yellow]YouTube:[/yellow] {existing['youtube_url']}")
                     if existing.get('youtube_short_url'):
                         console.print(f"[yellow]Short:[/yellow] {existing['youtube_short_url']}")
+                    
+                    # CRITICAL FIX: Delete empty run folder to avoid clutter
+                    console.print(f"\n[dim]🗑️  Cleaning up empty run folder: {d['root'].name}[/dim]")
+                    try:
+                        shutil.rmtree(d["root"])
+                        console.print(f"[dim]✅ Deleted empty folder[/dim]")
+                    except Exception as e:
+                        console.print(f"[dim yellow]⚠️  Could not delete folder: {e}[/dim yellow]")
+                    
                     console.print(f"\n[red]Pipeline stopped to prevent duplicate processing.[/red]")
                     return
 
@@ -934,6 +938,11 @@ def _run_internal(
                     # Unknown status - warn but continue
                     console.print(f"\n[yellow]⚠️ Book exists with unknown status: {status}[/yellow]")
                     console.print(f"[yellow]Continuing anyway...[/yellow]\n")
+                
+                # Add to database if this is a NEW book (not existing)
+                if not existing:
+                    add_book(book_name, author_name, d["root"].name, status="processing", playlist=playlist)
+                    print(f"[early_meta] ✅ Added NEW book to database: {book_name}")
 
                 # Save to output.titles.json (not early_metadata.json)
                 if not reused_old_folder:

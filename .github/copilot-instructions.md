@@ -520,6 +520,9 @@ synced = sync_database_from_youtube()  # Syncs from YouTube channel
 from src.infrastructure.adapters.youtube_upload import _get_credentials
 creds = _get_credentials(secrets_dir=Path("secrets"))
 print("Token valid!" if creds else "Token expired/missing")
+
+# Test database NoneType fix
+python scripts\test_db_none_fix.py  # Verifies defensive None checks work
 ```
 
 ### Test Shorts Generator
@@ -641,6 +644,69 @@ python -m src.infrastructure.adapters.youtube_upload runs/latest --is-short
 python -c "from src.infrastructure.adapters.database import sync_database_from_youtube; sync_database_from_youtube()"
 ```
 
+### 9. Database NoneType Error (FIXED - v2.2.1)
+**Symptom**: `⚠️ Failed to update database status: 'NoneType' object has no attribute 'strip'`
+**Cause**: Books with `None` values in `main_title` or `author_name` fields
+**Fix Applied**: Added defensive None checks to 7 functions in `database.py`
+**Status**: ✅ RESOLVED - All database operations now skip None entries gracefully
+**Test**: Run `python scripts\test_db_none_fix.py` to verify
+**Documentation**: See `docs/DATABASE_NONETYPE_FIX.md` for complete details
+
+Functions Fixed:
+- `check_book_exists()` - Book existence check
+- `update_book_status()` - Status updates (processing → uploaded → done)
+- `update_youtube_url()` - Main video URL updates
+- `update_book_youtube_url()` - Legacy URL updates
+- `remove_book()` - Book removal
+- `update_book_short_url()` - Shorts URL updates
+- `update_run_folder()` - Run folder path updates
+
+**Pattern Applied**:
+```python
+# Before (unsafe):
+title_match = book.get("main_title", "").strip().lower() == book_lower
+
+# After (safe):
+db_title = book.get("main_title")
+if not db_title:
+    continue  # Skip books with None titles
+title_match = str(db_title).strip().lower() == book_lower
+```
+
+### 10. Empty Run Folders for Duplicate Books (FIXED - v2.2.2)
+**Symptom**: When duplicate book detected, pipeline stops but leaves empty folder `runs/2025-10-24_XX-XX-XX/`
+**Root Cause**: 
+1. Pipeline creates run folder FIRST
+2. Then adds book to database
+3. Then checks for duplicates
+4. If duplicate found → stops but doesn't delete folder
+5. Result: Empty folders clutter `runs/` directory
+
+**Fix Applied**: 
+1. Reversed order: Check duplicates BEFORE adding to database
+2. Auto-delete empty folder when duplicate detected
+3. Prevents database pollution (no duplicate entries)
+
+**Code Changes** (`run_pipeline.py`):
+```python
+# BEFORE (wrong order):
+add_book(book_name, author_name, ...)  # Add first
+existing = check_book_exists(...)      # Then check (too late!)
+if existing: return                    # Folder already created ❌
+
+# AFTER (correct order):
+existing = check_book_exists(...)      # Check FIRST ✅
+if existing and status == 'uploaded':
+    shutil.rmtree(d["root"])          # Delete empty folder ✅
+    return                             # Stop cleanly
+if not existing:
+    add_book(...)                      # Only add if NEW ✅
+```
+
+**Status**: ✅ RESOLVED  
+**Test**: `python scripts\test_duplicate_folder_cleanup.py`  
+**Impact**: No more empty folders in `runs/`, cleaner file structure
+
 ## Testing Strategy
 
 **No formal test suite** - Validation via:
@@ -682,6 +748,9 @@ print('✅ Synced!' if synced else '❌ Failed')"
 
 # Test OAuth token validity
 python scripts/check_youtube_token.py
+
+# Test duplicate book folder cleanup
+python scripts\test_duplicate_folder_cleanup.py
 ```
 
 ## Dependencies & Versions
@@ -703,15 +772,17 @@ python scripts/check_youtube_token.py
 
 ## Recent Changes (Session Context)
 
-1. **YouTube Sync System** (v2.1.0): Auto-syncs `database.json` from channel to prevent duplicates
-2. **Batch Processing** (v2.0.0): Process multiple books from `books.txt` with `--auto-continue` flag
-3. **Font Profile System** (v2.2.0): Multi-font support with independent sizing dynamics
-4. **Cleaned `process.py`**: Removed 5 duplicate/old functions (24 → 19 functions)
-5. **Fixed search filter**: Max video length 120min → 90min (Line 194)
-6. **Fixed preflight cookies check**: `parents[2]` → `parents[3]` (Line 344)
-7. **Book cover fetching**: Added Google Books API as primary method (fast), Amazon as fallback
-8. **Added `absl-py`**: Was missing from requirements.txt, caused import errors
-9. **TTS script cleaning**: Removes prompt markers like `**[HOOK]**` before TTS generation
+1. **Empty Folder Cleanup Fix** (v2.2.2): Duplicate books no longer leave empty `runs/` folders
+2. **Database NoneType Fix** (v2.2.1): Fixed `'NoneType' object has no attribute 'strip'` errors in 7 database functions
+3. **YouTube Sync System** (v2.1.0): Auto-syncs `database.json` from channel to prevent duplicates
+4. **Batch Processing** (v2.0.0): Process multiple books from `books.txt` with `--auto-continue` flag
+5. **Font Profile System** (v2.2.0): Multi-font support with independent sizing dynamics
+6. **Cleaned `process.py`**: Removed 5 duplicate/old functions (24 → 19 functions)
+7. **Fixed search filter**: Max video length 120min → 90min (Line 194)
+8. **Fixed preflight cookies check**: `parents[2]` → `parents[3]` (Line 344)
+9. **Book cover fetching**: Added Google Books API as primary method (fast), Amazon as fallback
+10. **Added `absl-py`**: Was missing from requirements.txt, caused import errors
+11. **TTS script cleaning**: Removes prompt markers like `**[HOOK]**` before TTS generation
 
 ## Git Workflow
 
@@ -755,6 +826,12 @@ python -m src.infrastructure.adapters.process "path/to/run"  # Reprocess text
 - See `docs/AUTO_CONTINUE_MODE.md` for unattended processing guide
 
 **Recent Additions**:
+- Empty Folder Cleanup (v2.2.2): Auto-deletes empty run folders for duplicate books
+  - Test: `python scripts\test_duplicate_folder_cleanup.py`
+  - Fix: Reversed duplicate check order + auto-cleanup
+- Database NoneType Fix (v2.2.1): Defensive None checks in 7 database functions
+  - Documentation: `docs/DATABASE_NONETYPE_FIX.md`
+  - Test: `python scripts\test_db_none_fix.py`
 - Font profile system (v2.2.0): Multiple fonts with independent sizing dynamics
   - Documentation: `docs/FONT_PROFILE_SYSTEM.md`
   - Test: `python test_font_profiles.py`
@@ -764,4 +841,4 @@ python -m src.infrastructure.adapters.process "path/to/run"  # Reprocess text
 
 ---
 
-**Last Updated**: 2025-10-24 (Added complete pipeline documentation: YouTube Metadata, Merge, Thumbnail, Upload, Shorts stages)
+**Last Updated**: 2025-10-24 (Added empty folder cleanup fix for duplicate books)

@@ -165,10 +165,20 @@ def update_youtube_url(
     author_lower = (author_name or "").strip().lower() if author_name is not None else None
 
     for book in db.get("books", []):
-        title_match = book.get("main_title", "").strip().lower() == book_lower
+        # CRITICAL FIX: Defensive None check before strip()
+        db_title = book.get("main_title")
+        if not db_title:
+            continue
+        
+        title_match = str(db_title).strip().lower() == book_lower
         author_match = True
+        
         if author_lower:
-            author_match = book.get("author_name", "").strip().lower() == author_lower
+            db_author = book.get("author_name")
+            if db_author:
+                author_match = str(db_author).strip().lower() == author_lower
+            else:
+                author_match = False
 
         if title_match and author_match:
             # Extract video ID from URL if not provided
@@ -243,8 +253,10 @@ def remove_book(book_name: str, author_name: Optional[str] = None) -> bool:
     db["books"] = [
         book for book in db.get("books", [])
         if not (
-            book.get("main_title", "").strip().lower() == book_lower
-            and (not author_lower or book.get("author_name", "").strip().lower() == author_lower)
+            (lambda title, author: (
+                str(title).strip().lower() == book_lower
+                and (not author_lower or (author and str(author).strip().lower() == author_lower))
+            ))(book.get("main_title"), book.get("author_name"))
         )
     ]
 
@@ -275,7 +287,12 @@ def update_book_youtube_url(book_name: str, youtube_url: str) -> bool:
     updated = False
 
     for book in db.get("books", []):
-        if book.get("main_title", "").strip().lower() == book_lower:
+        # CRITICAL FIX: Defensive None check
+        db_title = book.get("main_title")
+        if not db_title:
+            continue
+            
+        if str(db_title).strip().lower() == book_lower:
             book["youtube_url"] = youtube_url
             # Extract video ID
             import re
@@ -311,7 +328,12 @@ def update_book_short_url(book_name: str, short_url: str) -> bool:
     updated = False
 
     for book in db.get("books", []):
-        if book.get("main_title", "").strip().lower() == book_lower:
+        # CRITICAL FIX: Defensive None check
+        db_title = book.get("main_title")
+        if not db_title:
+            continue
+            
+        if str(db_title).strip().lower() == book_lower:
             book["youtube_short_url"] = short_url
             # Extract video ID
             import re
@@ -358,10 +380,20 @@ def update_book_status(
 
     updated = False
     for book in db.get("books", []):
-        title_match = book.get("main_title", "").strip().lower() == book_lower
+        # CRITICAL FIX: Ensure main_title and author_name are safe to strip()
+        db_title = book.get("main_title")
+        if not db_title:
+            continue  # Skip books with no title
+        
+        title_match = str(db_title).strip().lower() == book_lower
 
         if author_lower:
-            author_match = book.get("author_name", "").strip().lower() == author_lower
+            db_author = book.get("author_name")
+            if db_author:
+                author_match = str(db_author).strip().lower() == author_lower
+            else:
+                author_match = False
+            
             if title_match and author_match:
                 book["status"] = status
                 book["date_updated"] = datetime.now().isoformat(timespec="seconds")
@@ -430,10 +462,20 @@ def update_book_run_folder(
 
     updated = False
     for book in db.get("books", []):
-        title_match = book.get("main_title", "").strip().lower() == book_lower
+        # CRITICAL FIX: Defensive None check
+        db_title = book.get("main_title")
+        if not db_title:
+            continue
+            
+        title_match = str(db_title).strip().lower() == book_lower
 
         if author_lower:
-            author_match = book.get("author_name", "").strip().lower() == author_lower
+            db_author = book.get("author_name")
+            if db_author:
+                author_match = str(db_author).strip().lower() == author_lower
+            else:
+                author_match = False
+                
             if title_match and author_match:
                 book["run_folder"] = new_run_folder
                 book["date_updated"] = datetime.now().isoformat(timespec="seconds")
