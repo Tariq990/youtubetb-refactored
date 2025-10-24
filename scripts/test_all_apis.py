@@ -78,7 +78,7 @@ except Exception as e:
 print("\n🎬 [3/5] Testing YouTube Upload API (OAuth)...")
 print("-" * 70)
 try:
-    repo_root = Path(__file__).parent
+    repo_root = Path(__file__).resolve().parent.parent
     client_secret = repo_root / "secrets" / "client_secret.json"
     token_file = repo_root / "secrets" / "token.json"
     
@@ -107,7 +107,7 @@ except Exception as e:
 print("\n🍪 [4/5] Testing Cookies...")
 print("-" * 70)
 try:
-    repo_root = Path(__file__).parent
+    repo_root = Path(__file__).resolve().parent.parent
     cookies_paths = [
         repo_root / "secrets" / "cookies.txt",
         repo_root / "cookies.txt"

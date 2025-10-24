@@ -353,10 +353,9 @@ if exist "secrets_encrypted" (
         echo    No password provided via env var. You will be prompted now.
         python scripts\decrypt_secrets.py
     )
-    set "DECRYPT_EXIT=%errorlevel%"
-    if not "%DECRYPT_EXIT%"=="0" (
-        echo ⚠️  Decryption returned exit code %DECRYPT_EXIT%.
-        if "%DECRYPT_EXIT%"=="2" (
+    if !errorlevel! neq 0 (
+        echo ⚠️  Decryption returned exit code !errorlevel!.
+        if !errorlevel! equ 2 (
             echo    Wrong password provided. Please re-run decryption later:
             echo       python scripts\decrypt_secrets.py
         ) else (
