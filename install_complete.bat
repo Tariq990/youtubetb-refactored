@@ -58,7 +58,7 @@ if %errorLevel% neq 0 (
     cd /d "%TEMP%\youtubetb_install"
     
     :: Download Python 3.11.9 installer
-    echo    Downloading Python installer (~30 MB)...
+    echo    Downloading Python installer ^(~30 MB^)...
     echo    Please wait, this may take 1-3 minutes...
     powershell -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host '    Downloading ' -NoNewline; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'python_installer.exe'; Write-Host 'Done!'"
     
@@ -123,7 +123,7 @@ if %errorLevel% neq 0 (
     
     if !MAJOR! EQU 3 if !MINOR! LSS 11 (
         echo ⚠️  Warning: Python 3.!MINOR! detected. Recommended: Python 3.11+
-        echo Continue anyway? (Y/N)
+        echo Continue anyway? ^(Y/N^)
         set /p CONTINUE=
         if /i not "!CONTINUE!"=="Y" exit /b 1
     )
@@ -145,7 +145,7 @@ if %errorLevel% neq 0 (
     if not exist "!FFMPEG_DIR!" mkdir "!FFMPEG_DIR!"
     
     :: Download FFmpeg
-    echo    Downloading FFmpeg (~90 MB)...
+    echo    Downloading FFmpeg ^(~90 MB^)...
     echo    Please wait, this may take 2-5 minutes depending on your internet speed...
     cd /d "%TEMP%\youtubetb_install"
     
@@ -291,7 +291,7 @@ if not exist "requirements.txt" (
     exit /b 1
 )
 
-echo    Installing dependencies (~500 MB, 5-10 minutes)...
+echo    Installing dependencies ^(~500 MB, 5-10 minutes^)...
 echo    ⏳ This will download and install 60+ Python packages...
 echo    📊 Progress will be shown below:
 echo.
@@ -312,7 +312,7 @@ echo.
 :: ============================================================
 echo [7/8] Installing Playwright browsers...
 
-echo    Downloading Chromium (required for web scraping)...
+echo    Downloading Chromium ^(required for web scraping^)...
 playwright install chromium
 if %errorLevel% neq 0 (
     echo ⚠️  Playwright installation had issues, but continuing...
@@ -347,12 +347,12 @@ if exist "secrets_encrypted" (
         echo ⚠️  Skipping decryption. Run later with: python scripts\decrypt_secrets.py
     )
 ) else (
-    echo ⚠️  No encrypted secrets found (secrets_encrypted/ directory missing)
+    echo ⚠️  No encrypted secrets found ^(secrets_encrypted/ directory missing^)
     echo    You'll need to manually create secrets/ folder with required files:
-    echo      - api_key.txt (Gemini API key)
-    echo      - cookies.txt (YouTube cookies)
-    echo      - client_secret.json (YouTube OAuth)
-    echo      - token.json (YouTube OAuth token)
+    echo      - api_key.txt ^(Gemini API key^)
+    echo      - cookies.txt ^(YouTube cookies^)
+    echo      - client_secret.json ^(YouTube OAuth^)
+    echo      - token.json ^(YouTube OAuth token^)
 )
 echo.
 
