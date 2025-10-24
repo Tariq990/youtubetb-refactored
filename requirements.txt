@@ -13,6 +13,7 @@ yt-dlp>=2023.10.13
 # AI & ML
 google-generativeai>=0.3.0
 absl-py>=1.0.0
+openai-whisper>=20231117  # Optional: For audio alignment
 
 # Text-to-Speech
 elevenlabs>=0.2.0
@@ -24,9 +25,11 @@ moviepy>=1.0.3
 pydub>=0.25.1
 ffmpeg-python>=0.2.0
 mutagen>=1.47.0  # MP3 metadata extraction for TTS
+numpy>=1.24.0  # Required by moviepy and whisper
 
 # Web Scraping
 beautifulsoup4>=4.12.0
+lxml>=4.9.0  # Parser for BeautifulSoup
 playwright>=1.40.0  # After install, run: python -m playwright install chromium
 
 # Arabic Text Processing
@@ -42,6 +45,7 @@ questionary>=2.0.0
 requests>=2.31.0
 python-dateutil>=2.8.2
 psutil>=5.9.0
+certifi>=2023.0.0  # SSL certificates
 
 # Security & Encryption
 cryptography>=41.0.0  # For password-based secrets encryption

@@ -111,17 +111,31 @@ def main():
     
     for enc_file in encrypted_files:
         original_name = enc_file.stem  # Remove .enc extension
-        output_path = secrets_dir / original_name
+        
+        # Determine correct output location based on file type
+        if original_name == ".env":
+            # .env goes to both secrets/ and root
+            output_paths = [
+                secrets_dir / ".env",
+                repo_root / ".env"
+            ]
+        else:
+            # All other files go to secrets/ only
+            output_paths = [secrets_dir / original_name]
         
         try:
             # Decrypt file
             decrypted_data = decrypt_file(enc_file, password)
             
-            # Save decrypted file
-            with open(output_path, 'wb') as f:
-                f.write(decrypted_data)
+            # Save decrypted file to all target locations
+            for output_path in output_paths:
+                with open(output_path, 'wb') as f:
+                    f.write(decrypted_data)
+                
+                # Show only secrets/ path in output
+                if output_path.parent == secrets_dir:
+                    print(f"   ✅ {enc_file.name} → secrets/{original_name}")
             
-            print(f"   ✅ {enc_file.name} → {original_name}")
             decrypted_count += 1
             
         except InvalidToken:
@@ -139,7 +153,7 @@ def main():
     
     if decrypted_count > 0:
         print(f"\n✅ Decryption complete!")
-        print(f"   📂 Decrypted files saved to: {secrets_dir}")
+        print(f"   📂 All files restored to their correct locations")
         print(f"\n📋 Next steps:")
         print(f"   • Run your pipeline: python main.py")
         print(f"   • The secrets/ folder is in .gitignore (won't be committed)")

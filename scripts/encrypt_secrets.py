@@ -78,6 +78,7 @@ def main():
     # Get list of files to encrypt
     secret_files = [
         "api_key.txt",
+        "api_keys.txt",  # Multiple API keys
         "client_secret.json",
         "cookies.txt",
         "token.json",
