@@ -382,8 +382,8 @@ def upload_video(
 
     # === FIXED TAGS (ALWAYS FIRST) ===
     brand_tag = "InkEcho"
-    book_title = meta.get("main_title", "").strip()
-    author_name = meta.get("author_name", "").strip()
+    book_title = (meta.get("main_title") or "").strip()
+    author_name = (meta.get("author_name") or "").strip()
     
     # Convert fixed tags to natural format (keep spaces)
     fixed_tags = []
