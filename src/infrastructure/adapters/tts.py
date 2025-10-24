@@ -1,29 +1,33 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional
-import csv, time, subprocess
-from playwright.sync_api import sync_playwright
-import json, os, re
+from typing import Optional, Any, Dict
+import csv
+import time
+import subprocess
+import json
+import os
+import re
 import shutil
+from playwright.sync_api import sync_playwright
 from mutagen.mp3 import MP3
 
 # Try to import whisper for forced alignment (optional dependency)
 try:
-    import whisper
+    import whisper  # type: ignore[import-untyped]
     WHISPER_AVAILABLE = True
 except ImportError:
+    whisper = None  # type: ignore[assignment]
     WHISPER_AVAILABLE = False
 
 
 DEFAULT_VOICE = "Shimmer"
 DEFAULT_MAX_CHARS = 950
 DEFAULT_VOICE_INSTRUCTIONS = (
-    "Voice Affect: Deep, calm, and mysterious; like a storyteller guiding the listener into a dream.  \n"
-    "Tone: Warm but shadowy, with an undercurrent of suspense.  \n"
-    "Pacing: Slow and deliberate, with thoughtful pauses after key sentences.  \n"
-    "Emotion: Gentle empathy mixed with intrigue; soothing yet captivating.  \n"
-    "Pronunciation: Clear, steady, and slightly elongated on words such as \"dream,\" \"night,\" and \"silence.\"  \n"
-    "Pauses: Insert short silences after dramatic lines, as if letting the words echo in the dark.  \n.\n"
+    "Voice: The voice should be deep, velvety, and effortlessly cool, like a late-night jazz radio host.  \n"
+    "Tone: The tone is smooth, laid-back, and inviting, creating a relaxed and easygoing atmosphere.  \n"
+    "Personality: The delivery exudes confidence, charm, and a touch of playful sophistication, as if guiding the listener through a luxurious experience.  \n"
+    "Pronunciation: Words should be drawn out slightly with a rhythmic, melodic quality, emphasizing key phrases with a silky flow.  \n"
+    "Phrasing: Sentences should be fluid, conversational, and slightly poetic, with pauses that let the listener soak in the cool, jazzy vibe.  \n"
 )
 
 
@@ -238,11 +242,13 @@ def _save_timestamps_with_whisper(text_path: Path, narration_mp3: Path, run_dir:
 
         # Load Whisper model (tiny = fastest, we already know the content!)
         print("   Loading Whisper model (tiny - optimized for speed)...")
+        if whisper is None:
+            raise ImportError("Whisper module not available")
         model = whisper.load_model("tiny")
 
         # Transcribe with word-level timestamps + prompt for guidance
         print("   Processing word-level alignment (tiny model = 4x faster)...")
-        result = model.transcribe(
+        result: Dict[str, Any] = model.transcribe(
             str(narration_mp3),
             language="en",
             word_timestamps=True,
@@ -268,10 +274,16 @@ def _save_timestamps_with_whisper(text_path: Path, narration_mp3: Path, run_dir:
             if "words" not in segment:
                 continue
 
-            for word_info in segment["words"]:
-                word = word_info.get("word", "").strip()
-                start = word_info.get("start", 0.0)
-                end = word_info.get("end", 0.0)
+            words_list = segment.get("words", [])
+            if not isinstance(words_list, list):
+                continue
+                
+            for word_info in words_list:
+                if not isinstance(word_info, dict):
+                    continue
+                word = str(word_info.get("word", "")).strip()
+                start = float(word_info.get("start", 0.0))
+                end = float(word_info.get("end", 0.0))
 
                 if not current_sentence:
                     sentence_start = start
@@ -293,16 +305,37 @@ def _save_timestamps_with_whisper(text_path: Path, narration_mp3: Path, run_dir:
         # Add remaining words as final sentence
         if current_sentence:
             sentence_text = " ".join(current_sentence)
-            last_word = result["segments"][-1]["words"][-1]
-            timestamps.append({
-                "index": idx,
-                "text": sentence_text,
-                "start": sentence_start,
-                "duration": last_word.get("end", 0.0) - sentence_start
-            })
+            segments_list = result.get("segments", [])
+            if segments_list and isinstance(segments_list, list):
+                last_segment = segments_list[-1]
+                if isinstance(last_segment, dict):
+                    words_list = last_segment.get("words", [])
+                    if words_list and isinstance(words_list, list):
+                        last_word_dict = words_list[-1]
+                        if isinstance(last_word_dict, dict):
+                            end_time = float(last_word_dict.get("end", 0.0))
+                            timestamps.append({
+                                "index": idx,
+                                "text": sentence_text,
+                                "start": sentence_start,
+                                "duration": end_time - sentence_start
+                            })
+                        else:
+                            # Fallback if last_word is not a dict
+                            timestamps.append({
+                                "index": idx,
+                                "text": sentence_text,
+                                "start": sentence_start,
+                                "duration": 0.0
+                            })
 
         # Calculate total duration
-        total_duration = result.get("segments", [{}])[-1].get("end", 0.0) if result.get("segments") else 0.0
+        segments_list = result.get("segments", [])
+        total_duration = 0.0
+        if segments_list and isinstance(segments_list, list):
+            last_segment = segments_list[-1]
+            if isinstance(last_segment, dict):
+                total_duration = float(last_segment.get("end", 0.0))
 
         # Save to timestamps.json
         output_path = run_dir / "timestamps.json"
@@ -386,9 +419,9 @@ def _save_timestamps(segments_dir: Path, run_dir: Path) -> bool:
                     if result.stdout.strip():
                         duration = float(result.stdout.strip())
                         print(f"✓ Used ffprobe for {mp3_file.name}: {duration:.2f}s")
-                except subprocess.CalledProcessError as e:
+                except subprocess.CalledProcessError as e:  # type: ignore[possibly-unbound]
                     print(f"⚠️ ffprobe failed for {mp3_file.name}: exit code {e.returncode}")
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired:  # type: ignore[possibly-unbound]
                     print(f"⏱️ ffprobe timed out for {mp3_file.name}")
                 except Exception as e:
                     print(f"⚠️ ffprobe exception for {mp3_file.name}: {e}")

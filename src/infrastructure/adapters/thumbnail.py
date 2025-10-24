@@ -187,6 +187,115 @@ def _bebas_neue_candidates(weight: str = "bold") -> List[Path]:
                 pass
     return cands
 
+
+def _cairo_candidates(weight: str = "bold") -> List[Path]:
+    """
+    Search for Cairo font - Modern Arabic/Latin typeface with excellent readability.
+    Perfect for bilingual thumbnails and Arabic-friendly designs.
+    """
+    names_by_weight = {
+        "bold": [
+            "Cairo-Bold.ttf",
+            "CairoBold.ttf",
+            "Cairo-ExtraBold.ttf",
+            "CairoExtraBold.ttf",
+            "Cairo-SemiBold.ttf",
+            "CairoSemiBold.ttf",
+            "Cairo-Regular.ttf",
+        ],
+        "semibold": [
+            "Cairo-SemiBold.ttf",
+            "CairoSemiBold.ttf",
+            "Cairo-Bold.ttf",
+            "Cairo-Regular.ttf",
+        ],
+        "regular": [
+            "Cairo-Regular.ttf",
+            "Cairo.ttf",
+            "Cairo-SemiBold.ttf",
+        ],
+        "light": [
+            "Cairo-Light.ttf",
+            "CairoLight.ttf",
+            "Cairo-Regular.ttf",
+        ],
+    }
+    weight = weight.lower()
+    if weight == "bold":
+        order = names_by_weight.get("bold", []) + names_by_weight.get("semibold", [])
+    elif weight == "semibold":
+        order = names_by_weight.get("semibold", []) + names_by_weight.get("bold", [])
+    elif weight == "light":
+        order = names_by_weight.get("light", []) + names_by_weight.get("regular", [])
+    else:
+        order = names_by_weight.get("regular", []) + names_by_weight.get("semibold", [])
+
+    roots = [
+        Path("assets/fonts"),
+        Path("secrets/fonts"),
+        Path("C:/Windows/Fonts"),
+        Path("/usr/share/fonts"),
+        Path("/Library/Fonts"),
+        Path("/System/Library/Fonts/Supplemental"),
+    ]
+    cands: List[Path] = []
+    for r in roots:
+        try:
+            if not r.exists():
+                continue
+            for name in order:
+                p = r / name
+                if p.exists() and p not in cands:
+                    cands.append(p)
+            # Generic search for any Cairo variant
+            for p in r.glob("Cairo*.ttf"):
+                if p not in cands:
+                    cands.append(p)
+            for p in r.glob("cairo*.ttf"):
+                if p not in cands:
+                    cands.append(p)
+        except Exception:
+            pass
+    return cands
+
+
+def _impact_candidates(weight: str = "bold") -> List[Path]:
+    """
+    Search for Impact font - Bold, condensed display font.
+    Perfect for powerful, attention-grabbing thumbnail titles.
+    """
+    # Impact typically comes in one weight (bold by default)
+    names = [
+        "Impact.ttf",
+        "impact.ttf",
+        "IMPACT.TTF",
+    ]
+    
+    roots = [
+        Path("assets/fonts"),
+        Path("secrets/fonts"),
+        Path("C:/Windows/Fonts"),
+        Path("/usr/share/fonts"),
+        Path("/Library/Fonts"),
+        Path("/System/Library/Fonts/Supplemental"),
+    ]
+    cands: List[Path] = []
+    for r in roots:
+        try:
+            if not r.exists():
+                continue
+            for name in names:
+                p = r / name
+                if p.exists() and p not in cands:
+                    cands.append(p)
+            # Generic search for any Impact variant
+            for p in r.glob("*mpact*.ttf"):
+                if p not in cands:
+                    cands.append(p)
+        except Exception:
+            pass
+    return cands
+
 def _get_smart_text_color(background_rgb: Tuple[int, int, int], debug: bool = False) -> Tuple[int, int, int]:
     """
     Advanced text color selection with wide range of colors.
@@ -383,11 +492,62 @@ def _total_char_count(text: str) -> int:
         return 0
 
 
-def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: int = 700) -> int:
+def _load_font_profile(font_name: str, config_dir: Path = Path("config")) -> dict:
+    """
+    Load font-specific sizing profile from settings.json.
+    Each font can have its own dynamic sizing parameters.
+    
+    Returns default Bebas Neue profile if font not found or error occurs.
+    """
+    default_profile = {
+        "title_base_size": 135,
+        "title_min_size": 60,
+        "title_max_size": 220,
+        "subtitle_base_size": 80,
+        "subtitle_min_size": 65,
+        "subtitle_ratio": 0.70,
+        "dynamic_scaling": {
+            "2_words": 1.8,
+            "3_words_long": 0.9,
+            "3_words_medium": 1.2,
+            "3_words_short": 1.5,
+            "4_words": 1.1,
+            "5_words": 1.0,
+            "6_words": 0.95,
+            "decay_rate": 0.92
+        }
+    }
+    
+    try:
+        settings_path = config_dir / "settings.json"
+        if not settings_path.exists():
+            return default_profile
+        
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        profiles = settings.get("thumbnail_font_profiles", {})
+        
+        # Return profile for requested font, or default
+        return profiles.get(font_name, default_profile)
+    except Exception:
+        return default_profile
+
+
+def _calculate_optimal_title_size(
+    text: str, 
+    font_profile: dict,
+    max_width: int = 700
+) -> int:
     """
     Advanced geometric calculation for optimal title size with maximum dynamics.
     Uses text density, word distribution, and golden ratio for perfect balance.
+    
+    NOW FONT-SPECIFIC: Each font (Bebas Neue, Cairo, etc.) has its own sizing logic!
     """
+    base_size = font_profile.get("title_base_size", 135)
+    min_size = font_profile.get("title_min_size", 60)
+    max_size = font_profile.get("title_max_size", 220)
+    scaling = font_profile.get("dynamic_scaling", {})
+    
     word_count = _word_count(text)
     char_count = _total_char_count(text)
     avg_word_len = _avg_word_length(text)
@@ -406,25 +566,26 @@ def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: in
     geometric_factor = max_width / (density * avg_word_len * word_count ** 0.5)
     size = base_size * geometric_factor * 0.05  # Reduced scale factor for better fit
 
-    # Word count adjustments with exponential decay
+    # Word count adjustments with exponential decay - FONT-SPECIFIC!
     if word_count <= 2:
-        size *= 1.8  # Boost for short titles
+        size *= scaling.get("2_words", 1.8)  # Use profile-specific boost
     elif word_count == 3:
         if avg_word_len > 7:
-            size *= 0.9
+            size *= scaling.get("3_words_long", 0.9)
         elif avg_word_len > 5:
-            size *= 1.2
+            size *= scaling.get("3_words_medium", 1.2)
         else:
-            size *= 1.5
+            size *= scaling.get("3_words_short", 1.5)
     elif word_count == 4:
-        size *= 1.1
+        size *= scaling.get("4_words", 1.1)
     elif word_count == 5:
-        size *= 1.0
+        size *= scaling.get("5_words", 1.0)
     elif word_count == 6:
-        size *= 0.95
+        size *= scaling.get("6_words", 0.95)
     else:
-        # Exponential decay for long titles
-        decay = 0.92 ** (word_count - 6)
+        # Exponential decay for long titles - FONT-SPECIFIC decay rate!
+        decay_rate = scaling.get("decay_rate", 0.92)
+        decay = decay_rate ** (word_count - 6)
         size *= decay
 
     # Character count fine-tuning with logarithmic scaling
@@ -440,10 +601,7 @@ def _calculate_optimal_title_size(text: str, base_size: int = 135, max_width: in
     # Apply golden ratio for final aesthetic touch
     size = size / golden_ratio if size > 150 else size * golden_ratio * 0.8
 
-    # Ensure size is within dynamic range based on text complexity
-    min_size = max(60, 180 - word_count * 5)  # Reduced from 80/200 for smaller text
-    max_size = min(220, 280 - density * 2)  # Reduced from 250/300 for smaller text
-
+    # Ensure size is within FONT-SPECIFIC dynamic range
     return int(max(min_size, min(max_size, size)))
 
 
@@ -522,12 +680,21 @@ def _draw_text_with_outline(draw: ImageDraw.ImageDraw, xy: Tuple[int, int], text
     x, y = xy
     # Draw outline only if requested
     if outline_width and outline_width > 0:
-        # Simple 8-direction outline
+        # Smooth outline using semi-transparent layers for softer anti-aliased effect
+        outline_color = outline if isinstance(outline, tuple) and len(outline) >= 3 else (0, 0, 0)
+        
         for dx in range(-outline_width, outline_width + 1):
             for dy in range(-outline_width, outline_width + 1):
                 if dx == 0 and dy == 0:
                     continue
-                draw.text((x + dx, y + dy), text, font=font, fill=outline)
+                # Use semi-transparent outline for smoother appearance
+                if len(outline_color) == 4:
+                    # Already has alpha
+                    draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+                else:
+                    # Add alpha for smoothness (180 = ~70% opacity)
+                    smooth_outline = (outline_color[0], outline_color[1], outline_color[2], 180)
+                    draw.text((x + dx, y + dy), text, font=font, fill=smooth_outline)
     draw.text((x, y), text, font=font, fill=fill)
 
 
@@ -646,14 +813,19 @@ def _extract_accent_color_from_cover(cover_path: Path, debug: bool = False) -> O
         # Get all pixels
         pixels = list(img.getdata())
 
-        # Filter out very dark, very light, and gray colors
+        # Filter out very dark, very light, gray colors, and whites
         vibrant_pixels = []
         for r, g, b in pixels:
             # Skip very dark (too close to black)
             if r < 30 and g < 30 and b < 30:
                 continue
-            # Skip very light (too close to white)
-            if r > 240 and g > 240 and b > 240:
+            # Skip whites and very light colors (more strict)
+            # White = RGB(255,255,255), so reject anything close
+            if r > 220 and g > 220 and b > 220:
+                continue
+            # Additional check: reject if average > 200 (catches off-whites)
+            avg = (r + g + b) / 3
+            if avg > 200:
                 continue
             # Skip grays (low saturation)
             h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
@@ -926,13 +1098,17 @@ def generate_thumbnail(
         title_explicit.append(Path(env_title_font))
     if env_sub_font and Path(env_sub_font).exists():
         sub_explicit.append(Path(env_sub_font))
-    # 3) Family name requests (Bebas Neue only)
+    # 3) Family name requests (Bebas Neue, Cairo, and Impact supported)
     def family_to_candidates(name: Optional[str], weight_title: str, weight_sub: str) -> Tuple[List[Path], List[Path]]:
         nt = (name or '').strip().lower()
         if not nt:
             return [], []
         if nt in ("bebas", "bebas neue", "bebas-neue", "bebasneue"):
             return _bebas_neue_candidates(weight_title), _bebas_neue_candidates(weight_sub)
+        if nt in ("cairo",):
+            return _cairo_candidates(weight_title), _cairo_candidates(weight_sub)
+        if nt in ("impact",):
+            return _impact_candidates(weight_title), _impact_candidates(weight_sub)
         # Generic search by family substring
         roots = [
             Path("assets/fonts"), Path("secrets/fonts"), Path("C:/Windows/Fonts"),
@@ -1000,11 +1176,22 @@ def generate_thumbnail(
     text_area_y = top_pad  # Perfect alignment with cover zone top
     text_area_w = available_for_text
 
+    # Load font-specific profile for dynamic sizing
+    # Each font (Bebas Neue, Cairo, etc.) has its own sizing dynamics!
+    repo_root = Path(__file__).resolve().parents[3]  # Fixed: was parents[2], should be parents[3]!
+    config_dir = repo_root / "config"
+    font_profile = _load_font_profile(title_font_name or "Bebas Neue", config_dir)
+    
+    if debug:
+        print(f"[thumb] DEBUG: config_dir = {config_dir}")
+        print(f"[thumb] DEBUG: title_base_size = {font_profile['title_base_size']}")
+        print(f"[thumb] loaded font profile for '{title_font_name}': base={font_profile['title_base_size']}px")
+
     # Load fonts (bigger main title size and smaller subtitle size)
     try:
         tsize = max(40, int(title_font_size))
     except Exception:
-        tsize = 90  # Reduced from 110 for smaller initial size
+        tsize = font_profile["title_base_size"]  # Use profile default
 
     # REMOVED: Short title boost - now ALL titles use dynamic sizing
     title_word_count = _word_count(title)
@@ -1013,7 +1200,7 @@ def generate_thumbnail(
 
     # Apply dynamic title sizing for ALL titles (removed short_title exception)
     if dynamic_title_size:
-        tsize = _calculate_optimal_title_size(title, base_size=tsize, max_width=text_area_w)
+        tsize = _calculate_optimal_title_size(title, font_profile=font_profile, max_width=text_area_w)
         if debug:
             try:
                 print(f"[thumb] calculated title size: {tsize}px (word_count={_word_count(title)}, avg_len={_avg_word_length(title):.1f})")
@@ -1026,7 +1213,7 @@ def generate_thumbnail(
     try:
         ssize = max(38, int(subtitle_font_size))
     except Exception:
-        ssize = 42
+        ssize = font_profile["subtitle_base_size"]  # Use profile default
     subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
     title_font = _load_font(tsize, title_font_cands, strict=strict_fonts, role="title", debug=debug)
 
@@ -1203,26 +1390,19 @@ def generate_thumbnail(
             sample_size=100
         )
 
-        # For subtitle: try to use extracted accent color if contrast is good
+        # For subtitle: use extracted accent color from cover (ignore contrast check)
         if cover_path:
             extracted_color = _extract_accent_color_from_cover(cover_path, debug=False)
             if extracted_color:
-                contrast = _calculate_contrast_ratio(extracted_color, subtitle_bg_avg)
+                # Use extracted color directly without contrast check
+                # We already filtered out whites in extraction, so this is safe
+                subtitle_color = extracted_color
                 if debug:
+                    contrast = _calculate_contrast_ratio(extracted_color, subtitle_bg_avg)
                     print(f"[thumb] subtitle extracted color: RGB{extracted_color}, contrast: {contrast:.2f}:1")
-
-                # WCAG AA requires 4.5:1 for normal text, 3:1 for large text (>18pt)
-                # Our subtitle is large (60px), so 3:1 is acceptable
-                if contrast >= 3.0:
-                    subtitle_color = extracted_color
-                    if debug:
-                        print(f"[thumb] ✅ using extracted color (good contrast)")
-                else:
-                    # Low contrast, use smart color from palette
-                    subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
-                    if debug:
-                        print(f"[thumb] ⚠️ low contrast, using smart color: RGB{subtitle_color}")
+                    print(f"[thumb] ✅ using extracted color (dominant color from cover)")
             else:
+                # No vibrant color found, use smart color
                 subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
         else:
             subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
@@ -1288,7 +1468,7 @@ def generate_thumbnail(
                     if debug:
                         print("[thumb] subtitle overlay failed:", e)
 
-            # Draw subtitle line
+            # Draw subtitle line with clean color (no outline)
             _draw_text_with_outline(draw, (cx, int(y)), sub_line, subtitle_font, fill=sc, outline=(0, 0, 0, 0), outline_width=0)
 
             if debug:

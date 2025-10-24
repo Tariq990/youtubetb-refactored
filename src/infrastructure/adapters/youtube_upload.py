@@ -354,16 +354,15 @@ def upload_video(
     book_title = meta.get("main_title", "").strip()
     author_name = meta.get("author_name", "").strip()
     
-    # Convert fixed tags to underscore format (no spaces)
+    # Convert fixed tags to natural format (keep spaces)
     fixed_tags = []
     if brand_tag:
         fixed_tags.append(brand_tag)
     if book_title:
-        fixed_tags.append(book_title.replace(" ", "_"))
+        fixed_tags.append(book_title)  # Keep spaces - more readable
     if author_name:
-        author_name_underscore = author_name.replace(" ", "_")
-        if author_name_underscore not in fixed_tags:
-            fixed_tags.append(author_name_underscore)
+        if author_name not in fixed_tags:
+            fixed_tags.append(author_name)  # Keep spaces - more readable
     
     print(f"[upload] Fixed tags (always first): {fixed_tags}")
     
@@ -372,9 +371,8 @@ def upload_video(
     fixed_tags_lower = {ft.lower() for ft in fixed_tags}
     tags = [tag for tag in tags if tag.lower() not in fixed_tags_lower]
     
-    # Convert spaces to underscores in all tags
-    tags = [tag.replace(" ", "_") for tag in tags]
-    print(f"[upload] Converted spaces to underscores in {len(tags)} dynamic tags")
+    # Keep tags as-is (YouTube accepts spaces in tags)
+    print(f"[upload] Processing {len(tags)} dynamic tags (keeping original format)")
     
     # === REMOVE PROBLEMATIC TAGS ===
     BLOCKED_PATTERNS = {

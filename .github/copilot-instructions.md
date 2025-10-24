@@ -118,6 +118,9 @@ repo_root = Path(__file__).resolve().parents[3]  # CRITICAL: Must be 3, not 2!
 - `gemini_model`: Model selection (default: `gemini-2.5-flash-latest`)
 - `prefer_local_cover`: Download cover locally vs. use URL
 - `cover_source`: Legacy field (now always Amazon)
+- `thumbnail_font_profiles`: **NEW!** Font-specific sizing dynamics (Bebas Neue, Cairo)
+  - Each font has independent base_size, min/max bounds, scaling factors
+  - See `docs/FONT_PROFILE_SYSTEM.md` for complete guide
 
 ## Developer Workflows
 
@@ -274,11 +277,17 @@ python -m src.infrastructure.adapters.process "path/to/run"  # Reprocess text
 - Gemini prompts: `config/prompts.json`
 - Model config: `config/settings.json`
 - Cover scraping: `src/infrastructure/adapters/process.py:220`
+- Font profiles: `config/settings.json` → `thumbnail_font_profiles`
 
 **Log Locations**:
 - Pipeline: `runs/<timestamp>_<book>/pipeline.log`
 - Preflight: `runs/<timestamp>/preflight.log`
 
+**Recent Additions**:
+- Font profile system (v2.2.0): Multiple fonts with independent sizing dynamics
+  - Documentation: `docs/FONT_PROFILE_SYSTEM.md`
+  - Test: `python test_font_profiles.py`
+
 ---
 
-**Last Updated**: 2025-10-22 (Added Google Books API for faster cover fetching)
+**Last Updated**: 2025-10-24 (Added font profile system for multi-font support)
