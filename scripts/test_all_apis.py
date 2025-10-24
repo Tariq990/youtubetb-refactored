@@ -137,6 +137,26 @@ try:
                 print(f"   ✅ Amazon cookies: {len(amazon_cookies)}")
             else:
                 print(f"   ⚠️  No Amazon cookies found")
+            
+            # ⚠️ CRITICAL: Check if cookie VALUES are present (not just names)
+            cookies_with_values = 0
+            cookies_without_values = 0
+            for line in lines:
+                parts = line.split('\t')
+                # Netscape format: domain, flag, path, secure, expiration, name, value
+                if len(parts) >= 7:
+                    value = parts[6].strip()
+                    if value:  # Has actual value
+                        cookies_with_values += 1
+                    else:  # Empty value
+                        cookies_without_values += 1
+            
+            if cookies_without_values > 0:
+                print(f"   ❌ CRITICAL: {cookies_without_values}/{len(lines)} cookies have EMPTY VALUES!")
+                print(f"   ⚠️  Cookie file has names but no session tokens")
+                print(f"   ⚠️  Pipeline will FAIL - need cookies with actual values")
+            elif cookies_with_values > 0:
+                print(f"   ✅ All {cookies_with_values} cookies have values")
             break
     
     if not cookies_found:

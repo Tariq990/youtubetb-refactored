@@ -74,7 +74,26 @@ def validate_cookies_content(cookies_path: Path) -> Tuple[bool, str]:
         if len(amazon_cookies) < 3:
             return False, f"No Amazon cookies found ({len(amazon_cookies)} found, expected at least 3)"
         
-        return True, f"Valid cookies file with {len(cookie_lines)} cookies ({len(youtube_cookies)} YouTube, {len(amazon_cookies)} Amazon)"
+        # ⚠️ CRITICAL: Check if cookies have actual VALUES (not just names)
+        cookies_with_values = 0
+        cookies_without_values = 0
+        for line in cookie_lines:
+            parts = line.split('\t')
+            # Netscape format: domain, flag, path, secure, expiration, name, value
+            if len(parts) >= 7:
+                value = parts[6].strip()
+                if value:  # Has actual value
+                    cookies_with_values += 1
+                else:  # Empty value
+                    cookies_without_values += 1
+        
+        if cookies_without_values > 0:
+            return False, f"CRITICAL: {cookies_without_values}/{len(cookie_lines)} cookies have EMPTY VALUES (no session tokens)!"
+        
+        if cookies_with_values == 0:
+            return False, "No cookies with values found - all values are empty!"
+        
+        return True, f"Valid cookies file with {len(cookie_lines)} cookies ({len(youtube_cookies)} YouTube, {len(amazon_cookies)} Amazon, all with values)"
         
     except Exception as e:
         return False, f"Error reading file: {e}"
