@@ -538,21 +538,58 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                 else:
                     print("cookies.txt not found; proceeding without cookies.")
 
-            # YouTube API key test
-            yt_key = _discover_yt_api_key(repo_root)
-            if not yt_key:
-                print("YouTube API key not found (env YT_API_KEY or secrets/api_key.txt)")
+            # YouTube API key test (with multi-key fallback)
+            yt_keys = []
+            
+            # 1. Try environment variable first
+            env_key = os.environ.get("YT_API_KEY")
+            if env_key:
+                yt_keys.append(env_key.strip())
+            
+            # 2. Load from api_keys.txt (multiple keys)
+            api_keys_path = repo_root / "secrets" / "api_keys.txt"
+            if api_keys_path.exists():
+                try:
+                    content = api_keys_path.read_text(encoding="utf-8")
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            yt_keys.append(line)
+                except Exception:
+                    pass
+            
+            # 3. Fallback to single api_key.txt
+            if not yt_keys:
+                single_key = _discover_yt_api_key(repo_root)
+                if single_key:
+                    yt_keys.append(single_key)
+            
+            if not yt_keys:
+                print("YouTube API key not found (env YT_API_KEY, secrets/api_keys.txt, or secrets/api_key.txt)")
                 ok = False
             else:
-                try:
-                    test_url = "https://www.googleapis.com/youtube/v3/search"
-                    params = {"part": "snippet", "q": "test", "type": "video", "maxResults": 1, "key": yt_key}
-                    r = requests.get(test_url, params=params, timeout=8)
-                    if r.status_code != 200:
-                        print("YouTube API key test failed:", r.status_code, r.text[:200])
-                        ok = False
-                except Exception as e:
-                    print("YouTube API test error:", e)
+                yt_key_working = False
+                for i, yt_key in enumerate(yt_keys, start=1):
+                    try:
+                        test_url = "https://www.googleapis.com/youtube/v3/search"
+                        params = {"part": "snippet", "q": "test", "type": "video", "maxResults": 1, "key": yt_key}
+                        r = requests.get(test_url, params=params, timeout=10)
+                        if r.status_code == 200:
+                            print(f"✅ YouTube API key {i}/{len(yt_keys)} working!")
+                            yt_key_working = True
+                            break
+                        elif r.status_code == 403 and "quota" in r.text.lower():
+                            print(f"⚠️  YouTube API key {i}/{len(yt_keys)}: Quota exceeded, trying next...")
+                            continue
+                        else:
+                            print(f"⚠️  YouTube API key {i}/{len(yt_keys)} failed: {r.status_code}")
+                            continue
+                    except Exception as e:
+                        print(f"⚠️  YouTube API key {i}/{len(yt_keys)} error: {str(e)[:100]}")
+                        continue
+                
+                if not yt_key_working:
+                    print(f"❌ All {len(yt_keys)} YouTube API key(s) failed!")
                     ok = False
 
             # Gemini API key test (with multi-key fallback)
