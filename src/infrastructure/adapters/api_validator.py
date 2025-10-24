@@ -148,15 +148,21 @@ class APIValidator:
 
     def validate_cookies_file(self) -> Tuple[bool, str]:
         """Check if cookies.txt exists for age/geo-restricted videos"""
-        cookies_path = Path("cookies.txt")
-        if cookies_path.exists():
-            size = cookies_path.stat().st_size
-            if size > 0:
-                return True, f"✅ Found ({size} bytes)"
-            else:
-                return False, "⚠️ File exists but is empty"
-        else:
-            return False, "⚠️ Not found (optional but recommended for restricted videos)"
+        # Check both root and secrets/ folder
+        cookies_paths = [
+            Path("cookies.txt"),
+            Path("secrets") / "cookies.txt"
+        ]
+        
+        for cookies_path in cookies_paths:
+            if cookies_path.exists():
+                size = cookies_path.stat().st_size
+                if size > 0:
+                    return True, f"✅ Found ({size} bytes)"
+                else:
+                    return False, "⚠️ File exists but is empty"
+        
+        return False, "⚠️ Not found (optional but recommended for restricted videos)"
 
     def validate_secrets_folder(self) -> Tuple[bool, str]:
         """Check if secrets folder and required files exist"""
@@ -213,37 +219,79 @@ class APIValidator:
     # ==================== API KEYS VALIDATION ====================
 
     def validate_youtube_api(self) -> Tuple[bool, str]:
-        """Validate YouTube Data API v3"""
-        api_key = os.getenv('YT_API_KEY')
+        """Validate YouTube Data API v3 with fallback support"""
+        # Try to get keys from multiple sources
+        api_keys = []
+        
+        # 1. Environment variable
+        env_key = os.getenv('YT_API_KEY')
+        if env_key:
+            api_keys.append(env_key)
+        
+        # 2. api_key.txt (single key)
+        repo_root = Path(__file__).resolve().parents[3]
+        single_key_file = repo_root / "secrets" / "api_key.txt"
+        if single_key_file.exists():
+            key = single_key_file.read_text(encoding='utf-8').strip()
+            if key and key not in api_keys:
+                api_keys.append(key)
+        
+        # 3. api_keys.txt (multiple keys with fallback)
+        multi_keys_file = repo_root / "secrets" / "api_keys.txt"
+        if multi_keys_file.exists():
+            lines = multi_keys_file.read_text(encoding='utf-8').splitlines()
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    if line not in api_keys:
+                        api_keys.append(line)
+        
+        if not api_keys:
+            return False, "❌ API key not found in environment or secrets/"
 
-        if not api_key:
-            return False, "❌ API key not found in environment"
+        # Try each key until one works
+        last_error = ""
+        for i, api_key in enumerate(api_keys, 1):
+            try:
+                # Test with a simple search query
+                url = "https://www.googleapis.com/youtube/v3/search"
+                params = {
+                    'part': 'snippet',
+                    'q': 'test',
+                    'maxResults': 1,
+                    'key': api_key
+                }
+                response = requests.get(url, params=params, timeout=10)
 
-        try:
-            # Test with a simple search query
-            url = "https://www.googleapis.com/youtube/v3/search"
-            params = {
-                'part': 'snippet',
-                'q': 'test',
-                'maxResults': 1,
-                'key': api_key
-            }
-            response = requests.get(url, params=params, timeout=10)
-
-            if response.status_code == 200:
-                return True, "✅ Valid - Working"
-            elif response.status_code == 403:
-                error_data = response.json()
-                reason = error_data.get('error', {}).get('errors', [{}])[0].get('reason', 'Unknown')
-                if reason == 'quotaExceeded':
-                    return False, "⚠️ Quota exceeded - Wait or use another key"
+                if response.status_code == 200:
+                    if len(api_keys) > 1:
+                        return True, f"✅ Valid - Working (key #{i}/{len(api_keys)})"
+                    else:
+                        return True, "✅ Valid - Working"
+                elif response.status_code == 403:
+                    error_data = response.json()
+                    reason = error_data.get('error', {}).get('errors', [{}])[0].get('reason', 'Unknown')
+                    if reason == 'quotaExceeded':
+                        last_error = f"Key #{i}: Quota exceeded"
+                        if not self.quiet:
+                            print(f"   ⚠️ Key #{i}/{len(api_keys)}: Quota exceeded, trying next...")
+                        continue  # Try next key
+                    else:
+                        last_error = f"Key #{i}: Access denied - {reason}"
+                        continue
                 else:
-                    return False, f"❌ Access denied: {reason}"
-            else:
-                return False, f"❌ HTTP {response.status_code}"
+                    last_error = f"Key #{i}: HTTP {response.status_code}"
+                    continue
 
-        except Exception as e:
-            return False, f"❌ Connection error: {str(e)[:50]}"
+            except Exception as e:
+                last_error = f"Key #{i}: Connection error - {str(e)[:50]}"
+                continue
+        
+        # All keys failed
+        if last_error:
+            return False, f"⚠️ All {len(api_keys)} key(s) failed - Last: {last_error}"
+        else:
+            return False, "❌ All API keys failed"
 
     def validate_gemini_api(self) -> Tuple[bool, str]:
         """Validate Google Gemini API with fallback support"""
