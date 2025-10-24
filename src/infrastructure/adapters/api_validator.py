@@ -261,7 +261,7 @@ class APIValidator:
                     'maxResults': 1,
                     'key': api_key
                 }
-                response = requests.get(url, params=params, timeout=10)
+                response = requests.get(url, params=params, timeout=30)  # Increased from 10 to 30 seconds
 
                 if response.status_code == 200:
                     if len(api_keys) > 1:
