@@ -1,6 +1,7 @@
 {
   "encrypted_files": [
     "api_key.txt.enc",
+    "api_keys.txt.enc",
     "client_secret.json.enc",
     "cookies.txt.enc",
     "token.json.enc",
@@ -8,6 +9,7 @@
   ],
   "original_files": [
     "api_key.txt",
+    "api_keys.txt",
     "client_secret.json",
     "cookies.txt",
     "token.json",
