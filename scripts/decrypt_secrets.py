@@ -13,6 +13,9 @@ The script will prompt for the password and decrypt all .enc files.
 
 from pathlib import Path
 import getpass
+import argparse
+import os
+import sys
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -68,6 +71,12 @@ def decrypt_file(encrypted_path: Path, password: str) -> bytes:
 
 def main():
     """Main decryption workflow."""
+    parser = argparse.ArgumentParser(description="Decrypt secrets from secrets_encrypted/ to secrets/.")
+    parser.add_argument("--password", dest="password", help="Decryption password (unsafe: visible in process list)")
+    parser.add_argument("--password-file", dest="password_file", help="Path to a file containing the password")
+    parser.add_argument("--non-interactive", action="store_true", help="Fail instead of prompting for password")
+    args = parser.parse_args()
+
     repo_root = Path(__file__).resolve().parents[1]
     encrypted_dir = repo_root / "secrets_encrypted"
     secrets_dir = repo_root / "secrets"
@@ -79,7 +88,7 @@ def main():
         print("\n💡 Tip: If you're on a new machine:")
         print("   1. Clone the repo: git clone <your-repo-url>")
         print("   2. The secrets_encrypted/ folder should be in the repo")
-        return
+        sys.exit(1)
     
     # Find encrypted files
     encrypted_files = list(encrypted_dir.glob("*.enc"))
@@ -87,7 +96,7 @@ def main():
     if not encrypted_files:
         print("❌ No encrypted files found!")
         print(f"   Looking in: {encrypted_dir}")
-        return
+        sys.exit(1)
     
     print("🔓 YouTubeTB Secrets Decryption")
     print("=" * 50)
@@ -97,9 +106,26 @@ def main():
         original_name = enc_file.stem  # Remove .enc extension
         print(f"   • {enc_file.name} → {original_name} ({size} bytes)")
     
-    # Get password from user
-    print("\n🔑 Enter decryption password:")
-    password = getpass.getpass("   Password: ")
+    # Resolve password: CLI > file > env > prompt (unless non-interactive)
+    password: str | None = None
+    if args.password:
+        password = args.password
+    elif args.password_file:
+        try:
+            password = Path(args.password_file).read_text(encoding="utf-8").strip()
+        except Exception as e:
+            print(f"❌ Failed to read password file: {e}")
+            sys.exit(1)
+    elif os.environ.get("YTTB_SECRETS_PASSWORD"):
+        password = os.environ["YTTB_SECRETS_PASSWORD"].strip()
+
+    if not password:
+        if args.non_interactive:
+            print("❌ No password provided and non-interactive mode is enabled")
+            print("   Provide --password, --password-file, or set YTTB_SECRETS_PASSWORD")
+            sys.exit(1)
+        print("\n🔑 Enter decryption password:")
+        password = getpass.getpass("   Password: ")
     
     # Create secrets directory
     secrets_dir.mkdir(exist_ok=True)
@@ -107,7 +133,8 @@ def main():
     # Decrypt each file
     print(f"\n🔓 Decrypting files...")
     decrypted_count = 0
-    failed_count = 0
+    wrong_password_count = 0
+    other_fail_count = 0
     
     for enc_file in encrypted_files:
         original_name = enc_file.stem  # Remove .enc extension
@@ -140,16 +167,17 @@ def main():
             
         except InvalidToken:
             print(f"   ❌ {enc_file.name} - WRONG PASSWORD or corrupted file")
-            failed_count += 1
+            wrong_password_count += 1
         except Exception as e:
             print(f"   ❌ {enc_file.name} - Error: {e}")
-            failed_count += 1
+            other_fail_count += 1
     
     # Summary
     print(f"\n📊 Decryption Summary:")
     print(f"   ✅ Successfully decrypted: {decrypted_count}")
-    if failed_count > 0:
-        print(f"   ❌ Failed: {failed_count}")
+    total_failed = wrong_password_count + other_fail_count
+    if total_failed > 0:
+        print(f"   ❌ Failed: {total_failed} (wrong password: {wrong_password_count}, other: {other_fail_count})")
     
     if decrypted_count > 0:
         print(f"\n✅ Decryption complete!")
@@ -157,10 +185,15 @@ def main():
         print(f"\n📋 Next steps:")
         print(f"   • Run your pipeline: python main.py")
         print(f"   • The secrets/ folder is in .gitignore (won't be committed)")
+        sys.exit(0)
     else:
         print(f"\n❌ No files were decrypted. Please check:")
         print(f"   • Password is correct")
         print(f"   • Encrypted files are not corrupted")
+        # Distinguish wrong password (most common) vs general failure
+        if wrong_password_count > 0 and decrypted_count == 0:
+            sys.exit(2)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,18 +1,3 @@
-@echo off
-setlocal enabledelayedexpansion
-chcp 65001 >nul
-title YouTubeTB - Complete Installation
-
-:: ============================================================
-:: YouTubeTB Complete Installation Script
-:: ============================================================
-:: This script performs a complete installation on a fresh Windows system:
-::   1. Checks for Python 3.11+ (downloads if missing)
-::   2. Downloads and installs FFmpeg
-::   3. Adds both to Windows PATH
-::   4. Clones the repository (if not already cloned)
-::   5. Installs Python dependencies
-::   6. Installs Playwright browsers
 ::   7. Decrypts secrets with password
 ::   8. Verifies installation
 :: ============================================================
@@ -22,6 +7,9 @@ echo ===============================================
 echo   YouTubeTB - Complete Installation
 echo ===============================================
 echo.
+
+@echo off
+setlocal EnableExtensions EnableDelayedExpansion
 
 :: Set color for better visibility
 color 0A
@@ -187,17 +175,35 @@ if %errorLevel% neq 0 (
         exit /b 1
     )
     
-    :: Add to PATH permanently
-    echo    Adding FFmpeg to PATH...
-    setx PATH "%PATH%;!FFMPEG_BIN!" /M >nul 2>&1
-    set "PATH=%PATH%;!FFMPEG_BIN!"
+        :: Add to PATH permanently (robust, avoid duplicates and truncation)
+        echo    Adding FFmpeg to PATH...
     
-    :: Verify installation
-    call :RefreshEnv
+        :: Append to Machine PATH only if not already present
+        powershell -NoProfile -Command ^
+            "$p='!FFMPEG_BIN!';" ^
+            "$m=[Environment]::GetEnvironmentVariable('Path','Machine');" ^
+            "if(-not ($m -split ';' | ForEach-Object { $_.Trim().ToLower() }) -contains $p.ToLower()){" ^
+            "  [Environment]::SetEnvironmentVariable('Path', ($m.TrimEnd(';') + ';' + $p), 'Machine')" ^
+            "}"
+    
+        :: Update current CMD session immediately
+        set "PATH=%PATH%;!FFMPEG_BIN!"
+    
+        :: Refresh PATH from registry for this process
+        call :RefreshEnv
+    
+        :: Optional: notify environment change so new processes pick it up
+        powershell -NoProfile -Command ^
+            "$sig='[DllImport(\"user32.dll\",SetLastError=true,CharSet=CharSet.Auto)]public static extern IntPtr SendMessageTimeout(IntPtr h,int m,IntPtr w,string l,int f,int t,out IntPtr r);';" ^
+            "Add-Type -MemberDefinition $sig -Name 'Win32' -Namespace 'PInvoke' | Out-Null;" ^
+            "[PInvoke.Win32]::SendMessageTimeout([IntPtr]0xffff,0x1A,[IntPtr]0,'Environment',2,5000,[ref]([IntPtr]::Zero)) | Out-Null"
+    
+        :: Verify installation
     ffmpeg -version >nul 2>&1
     if %errorLevel% neq 0 (
-        echo ⚠️  FFmpeg installed but not in PATH. Please restart your computer.
-        echo    Installed to: !FFMPEG_BIN!
+                echo ⚠️  FFmpeg installed but not detected in current session.
+                echo    Installed to: !FFMPEG_BIN!
+                echo    Tip: Open a new CMD window or run it via full path above.
     ) else (
         echo ✅ FFmpeg installed successfully
     )
@@ -284,6 +290,9 @@ if %errorLevel% neq 0 (
 echo ✅ Virtual environment activated
 echo.
 
+REM Ensure current session can import project packages (src, etc.)
+set "PYTHONPATH=%SCRIPT_DIR%;%PYTHONPATH%"
+
 :: ============================================================
 :: SECTION 6: Install Python Dependencies
 :: ============================================================
@@ -331,29 +340,31 @@ if %errorLevel% neq 0 (
 echo.
 
 :: ============================================================
-:: SECTION 8: Decrypt Secrets
+:: SECTION 8: Decrypt Secrets (Automatic)
 :: ============================================================
 echo [8/8] Setting up secrets...
 
-:: Check if secrets_encrypted exists
 if exist "secrets_encrypted" (
-    echo    Encrypted secrets found. Do you want to decrypt them now? (Y/N)
-    set /p DECRYPT=
-    
-    if /i "!DECRYPT!"=="Y" (
-        echo.
-        echo    Running decryption script...
-        echo    You will be prompted for the encryption password.
-        echo.
-        python scripts/decrypt_secrets.py
-        if %errorLevel% neq 0 (
-            echo ⚠️  Decryption failed or was cancelled.
-            echo    You can run it later with: python scripts\decrypt_secrets.py
+    echo    Encrypted secrets found. Attempting automatic decryption...
+    if defined YTTB_SECRETS_PASSWORD (
+        echo    Using password from environment variable YTTB_SECRETS_PASSWORD
+        python scripts\decrypt_secrets.py --non-interactive --password "%YTTB_SECRETS_PASSWORD%"
+    ) else (
+        echo    No password provided via env var. You will be prompted now.
+        python scripts\decrypt_secrets.py
+    )
+    set "DECRYPT_EXIT=%errorlevel%"
+    if not "%DECRYPT_EXIT%"=="0" (
+        echo ⚠️  Decryption returned exit code %DECRYPT_EXIT%.
+        if "%DECRYPT_EXIT%"=="2" (
+            echo    Wrong password provided. Please re-run decryption later:
+            echo       python scripts\decrypt_secrets.py
         ) else (
-            echo ✅ Secrets decrypted successfully
+            echo    Decryption failed. You can retry later:
+            echo       python scripts\decrypt_secrets.py
         )
     ) else (
-        echo ⚠️  Skipping decryption. Run later with: python scripts\decrypt_secrets.py
+        echo ✅ Secrets decrypted successfully
     )
 ) else (
     echo ⚠️  No encrypted secrets found ^(secrets_encrypted/ directory missing^)
@@ -375,7 +386,11 @@ echo.
 
 :: Run verification tests
 echo Verifying installation...
-python scripts/test_all_apis.py
+if exist scripts\test_all_apis.py (
+    python -m scripts.test_all_apis
+) else (
+    echo (Skipping scripts\test_all_apis.py - not found)
+)
 if %errorLevel% neq 0 (
     echo.
     echo ⚠️  Some verification tests failed.
