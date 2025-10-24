@@ -602,10 +602,14 @@ def validate_apis_before_run() -> bool:
 
 if __name__ == "__main__":
     """Standalone comprehensive validation tool"""
-    console.print("\n[bold]� Comprehensive Pipeline Validation Tool[/bold]")
+    console.print("\n[bold]🔍 Comprehensive Pipeline Validation Tool[/bold]")
     console.print("[dim]Checking system tools, packages, files, and API keys...[/dim]\n")
 
-    if validate_apis_before_run():
+    # Use VERBOSE mode for standalone execution
+    validator = APIValidator(quiet=False)
+    result = validator.validate_all()
+
+    if result:
         console.print("[bold green]✅ System fully validated! Ready to process books.[/bold green]")
         sys.exit(0)
     else:
