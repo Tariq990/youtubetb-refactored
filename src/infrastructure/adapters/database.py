@@ -552,22 +552,48 @@ def extract_book_from_youtube_title(title: str) -> Optional[str]:
 
 
 def _get_youtube_api_key() -> Optional[str]:
-    """الحصول على YouTube API key من البيئة أو secrets."""
-    # جرّب من environment variables أولاً
-    api_key = os.environ.get("YT_API_KEY") or os.environ.get("YOUTUBE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    if api_key:
-        return api_key
+    """الحصول على YouTube API key من البيئة أو secrets (أول مفتاح فقط)."""
+    keys = _get_all_youtube_api_keys()
+    return keys[0] if keys else None
+
+
+def _get_all_youtube_api_keys() -> list[str]:
+    """الحصول على جميع YouTube API keys المتاحة (للنظام الاحتياطي)."""
+    api_keys = []
     
-    # جرّب من secrets folder
+    # 1. جرّب من environment variables أولاً
+    env_key = os.environ.get("YT_API_KEY") or os.environ.get("YOUTUBE_API_KEY")
+    if env_key:
+        api_keys.append(env_key.strip())
+    
+    # 2. جلب من api_keys.txt (مفاتيح متعددة)
     repo_root = Path(__file__).resolve().parents[3]  # adapters → infrastructure → src → root
-    for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
-        if f.exists():
-            try:
-                return f.read_text(encoding="utf-8").strip()
-            except Exception:
-                pass
+    api_keys_file = repo_root / "secrets" / "api_keys.txt"
+    if api_keys_file.exists():
+        try:
+            lines = api_keys_file.read_text(encoding="utf-8").splitlines()
+            for line in lines:
+                line = line.strip()
+                # تجاهل الأسطر الفارغة والتعليقات
+                if line and not line.startswith("#"):
+                    if line not in api_keys:  # تجنب التكرار
+                        api_keys.append(line)
+        except Exception:
+            pass
     
-    return None
+    # 3. الاحتياطي: api_key.txt (مفتاح واحد)
+    if not api_keys:
+        for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
+            if f.exists():
+                try:
+                    key = f.read_text(encoding="utf-8").strip()
+                    if key:
+                        api_keys.append(key)
+                        break
+                except Exception:
+                    pass
+    
+    return api_keys
 
 
 def _get_channel_id_from_config() -> Optional[str]:
@@ -633,14 +659,16 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
     print("🔄 SYNCING DATABASE FROM YOUTUBE CHANNEL")
     print("="*60 + "\n")
     
-    # 1. الحصول على API key
-    api_key = _get_youtube_api_key()
-    if not api_key:
+    # 1. الحصول على جميع API keys (للنظام الاحتياطي)
+    api_keys = _get_all_youtube_api_keys()
+    if not api_keys:
         print("[Sync] ❌ YouTube API key not found")
-        print("[Sync]    Set YOUTUBE_API_KEY env or add secrets/api_key.txt")
-        print("[Sync]    Or add YT_API_KEY to .env file")
+        print("[Sync]    Set YT_API_KEY env or add secrets/api_keys.txt")
+        print("[Sync]    Or add secrets/api_key.txt")
         print("[Sync]    Database will remain empty - manual entry required")
         return False
+    
+    print(f"[Sync] 📋 Loaded {len(api_keys)} API key(s) for fallback")
     
     # 2. الحصول على Channel ID
     if not channel_id:
@@ -658,212 +686,267 @@ def sync_database_from_youtube(channel_id: Optional[str] = None) -> bool:
     
     try:
         from googleapiclient.discovery import build
+        from googleapiclient.errors import HttpError
     except ImportError:
         print("[Sync] ❌ google-api-python-client not installed")
         print("[Sync]    Run: pip install google-api-python-client")
         return False
     
-    try:
-        youtube = build('youtube', 'v3', developerKey=api_key)
-        
-        # 3. الحصول على uploads playlist ID
-        print("[Sync] 📡 Fetching channel information...")
-        channel_response = youtube.channels().list(
-            part='contentDetails',
-            id=channel_id
-        ).execute()
-        
-        if not channel_response.get('items'):
-            print(f"[Sync] ❌ Channel not found: {channel_id}")
-            return False
-        
-        uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
-
-        # 4. جلب جميع الفيديوهات (مع pagination)
-        print("[Sync] 📥 Fetching videos...")
-        videos = []
-        next_page_token = None
-        page_num = 0
-
-        from googleapiclient.errors import HttpError
+    # جرّب كل مفتاح حتى ينجح أحدهم
+    last_error = None
+    for key_idx, api_key in enumerate(api_keys, start=1):
         try:
-            # Primary approach: use the uploads playlist
-            while True:
-                page_num += 1
-                response = youtube.playlistItems().list(
-                    part='snippet',
-                    playlistId=uploads_playlist_id,
-                    maxResults=50,
-                    pageToken=next_page_token
-                ).execute()
-
-                for item in response.get('items', []):
-                    videos.append({
-                        'title': item['snippet']['title'],
-                        'video_id': item['snippet']['resourceId']['videoId'],
-                        'published_at': item['snippet']['publishedAt']
-                    })
-
-                print(f"[Sync]    Page {page_num}: {len(response.get('items', []))} videos")
-
-                next_page_token = response.get('nextPageToken')
-                if not next_page_token:
-                    break
-        except HttpError as e:
-            # Handle missing/invalid playlist (404 playlistNotFound)
-            # Don't print the ugly error - will show friendly message later
+            # إخفاء جزء من المفتاح للأمان
+            masked_key = api_key[:10] + "..." if len(api_key) > 10 else api_key
+            print(f"[Sync] 🔑 Trying API key {key_idx}/{len(api_keys)}: {masked_key}")
             
-            # Fallback 1: try deriving the uploads playlist id from channel id (existing heuristic)
+            youtube = build('youtube', 'v3', developerKey=api_key)
+            
+            # 3. الحصول على uploads playlist ID
+            print("[Sync] 📡 Fetching channel information...")
+            channel_response = youtube.channels().list(
+                part='contentDetails',
+                id=channel_id
+            ).execute()
+            
+            if not channel_response.get('items'):
+                print(f"[Sync] ❌ Channel not found: {channel_id}")
+                return False
+            
+            uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+
+            # 4. جلب جميع الفيديوهات (مع pagination)
+            print("[Sync] 📥 Fetching videos...")
+            videos = []
+            next_page_token = None
+            page_num = 0
+
             try:
-                if channel_id and channel_id.startswith('UC'):
-                    derived_uploads = 'UU' + channel_id[2:]
-                    if derived_uploads != uploads_playlist_id:
-                        print(f"[Sync] 🔁 Attempting fallback uploads playlist id: {derived_uploads}")
-                        uploads_playlist_id = derived_uploads
-                        # Try a single page to validate
-                        resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=5).execute()
-                        if resp.get('items'):
-                            next_page_token = resp.get('nextPageToken')
-                            for item in resp.get('items', []):
-                                videos.append({
-                                    'title': item['snippet']['title'],
-                                    'video_id': item['snippet']['resourceId']['videoId'],
-                                    'published_at': item['snippet']['publishedAt']
-                                })
-                            print(f"[Sync]    Fallback seed: {len(resp.get('items', []))} videos")
-                            # continue paginating using uploads_playlist_id
-                            while True:
-                                page_num += 1
-                                resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=50, pageToken=next_page_token).execute()
+                # Primary approach: use the uploads playlist
+                while True:
+                    page_num += 1
+                    response = youtube.playlistItems().list(
+                        part='snippet',
+                        playlistId=uploads_playlist_id,
+                        maxResults=50,
+                        pageToken=next_page_token
+                    ).execute()
+
+                    for item in response.get('items', []):
+                        videos.append({
+                            'title': item['snippet']['title'],
+                            'video_id': item['snippet']['resourceId']['videoId'],
+                            'published_at': item['snippet']['publishedAt']
+                        })
+
+                    print(f"[Sync]    Page {page_num}: {len(response.get('items', []))} videos")
+
+                    next_page_token = response.get('nextPageToken')
+                    if not next_page_token:
+                        break
+            except HttpError as e:
+                # Handle quota exceeded errors - try next key
+                if e.resp.status == 403 and 'quota' in str(e).lower():
+                    print(f"[Sync] ⚠️  API key {key_idx}/{len(api_keys)}: Quota exceeded")
+                    if key_idx < len(api_keys):
+                        print(f"[Sync]    Trying next API key...")
+                        continue  # Try next key in outer loop
+                    else:
+                        print(f"[Sync] ❌ All {len(api_keys)} API key(s) quota exceeded!")
+                        return False
+                
+                # Handle missing/invalid playlist (404 playlistNotFound)
+                # Fallback 1: try deriving the uploads playlist id from channel id
+                try:
+                    if channel_id and channel_id.startswith('UC'):
+                        derived_uploads = 'UU' + channel_id[2:]
+                        if derived_uploads != uploads_playlist_id:
+                            print(f"[Sync] 🔁 Attempting fallback uploads playlist id: {derived_uploads}")
+                            uploads_playlist_id = derived_uploads
+                            # Try a single page to validate
+                            resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=5).execute()
+                            if resp.get('items'):
+                                next_page_token = resp.get('nextPageToken')
                                 for item in resp.get('items', []):
                                     videos.append({
                                         'title': item['snippet']['title'],
                                         'video_id': item['snippet']['resourceId']['videoId'],
                                         'published_at': item['snippet']['publishedAt']
                                     })
-                                print(f"[Sync]    Page {page_num}: {len(resp.get('items', []))} videos")
-                                next_page_token = resp.get('nextPageToken')
-                                if not next_page_token:
-                                    break
+                                print(f"[Sync]    Fallback seed: {len(resp.get('items', []))} videos")
+                                # continue paginating using uploads_playlist_id
+                                while True:
+                                    page_num += 1
+                                    resp = youtube.playlistItems().list(part='snippet', playlistId=uploads_playlist_id, maxResults=50, pageToken=next_page_token).execute()
+                                    for item in resp.get('items', []):
+                                        videos.append({
+                                            'title': item['snippet']['title'],
+                                            'video_id': item['snippet']['resourceId']['videoId'],
+                                            'published_at': item['snippet']['publishedAt']
+                                        })
+                                    print(f"[Sync]    Page {page_num}: {len(resp.get('items', []))} videos")
+                                    next_page_token = resp.get('nextPageToken')
+                                    if not next_page_token:
+                                        break
+                            else:
+                                print("[Sync] ❌ Fallback playlist also returned no items")
+                        # If derived uploads is same or no items, fall through to search-based fallback
+                except Exception as fallback_err:
+                    print(f"[Sync] ⚠️  Fallback attempt failed: {fallback_err}")
+
+                # Fallback 2: use search.list by channelId to fetch videos directly
+                try:
+                    next_page_token = None
+                    search_page = 0
+                    while True:
+                        search_page += 1
+                        resp = youtube.search().list(
+                            part='snippet',
+                            channelId=channel_id,
+                            maxResults=50,
+                            order='date',
+                            pageToken=next_page_token,
+                            type='video'
+                        ).execute()
+
+                        items = resp.get('items', [])
+                        for item in items:
+                            videos.append({
+                                'title': item['snippet']['title'],
+                                'video_id': item['id']['videoId'],
+                                'published_at': item['snippet']['publishedAt']
+                            })
+
+                        if len(items) > 0:
+                            print(f"[Sync]    Found {len(items)} videos")
+
+                        next_page_token = resp.get('nextPageToken')
+                        if not next_page_token:
+                            break
+
+                    if not videos:
+                        print("[Sync] ⚠️  Channel has no public videos yet")
+                        print("[Sync]    This is normal for new channels")
+                        print("[Sync]    Database will remain empty until first video is uploaded")
+                        return False
+                except HttpError as search_err:
+                    # Check if quota exceeded on search fallback
+                    if search_err.resp.status == 403 and 'quota' in str(search_err).lower():
+                        print(f"[Sync] ⚠️  API key {key_idx}/{len(api_keys)}: Quota exceeded (search fallback)")
+                        if key_idx < len(api_keys):
+                            print(f"[Sync]    Trying next API key...")
+                            last_error = search_err
+                            continue  # Try next key
                         else:
-                            print("[Sync] ❌ Fallback playlist also returned no items")
-                    # If derived uploads is same or no items, fall through to search-based fallback
-            except Exception as fallback_err:
-                print(f"[Sync] ❌ Fallback attempt failed: {fallback_err}")
-
-            # Fallback 2: use search.list by channelId to fetch videos directly (more robust)
-            try:
-                # Silent fallback - only show results
-                next_page_token = None
-                # Reset page counter for search pages
-                search_page = 0
-                while True:
-                    search_page += 1
-                    resp = youtube.search().list(
-                        part='snippet',
-                        channelId=channel_id,
-                        maxResults=50,
-                        order='date',
-                        pageToken=next_page_token,
-                        type='video'
-                    ).execute()
-
-                    items = resp.get('items', [])
-                    for item in items:
-                        videos.append({
-                            'title': item['snippet']['title'],
-                            'video_id': item['id']['videoId'],
-                            'published_at': item['snippet']['publishedAt']
-                        })
-
-                    # Only show count if videos found
-                    if len(items) > 0:
-                        print(f"[Sync]    Found {len(items)} videos")
-
-                    next_page_token = resp.get('nextPageToken')
-                    if not next_page_token:
-                        break
-
-                if not videos:
-                    print("[Sync] ⚠️  Channel has no public videos yet")
-                    print("[Sync]    This is normal for new channels")
-                    print("[Sync]    Database will remain empty until first video is uploaded")
-                    return False
-            except Exception as search_err:
-                print(f"[Sync] ❌ Search-based fallback failed: {search_err}")
+                            print(f"[Sync] ❌ All {len(api_keys)} API key(s) quota exceeded!")
+                            return False
+                    
+                    print(f"[Sync] ❌ Search-based fallback failed: {search_err}")
+                    last_error = search_err
+                    continue  # Try next key
+            
+            # إذا وصلنا هنا، نجح هذا المفتاح!
+            print(f"[Sync] ✅ API key {key_idx}/{len(api_keys)} working!")
+            
+            # Check if any videos were found
+            if not videos:
+                print("[Sync] ⚠️  No videos found on channel")
+                print("[Sync]    Channel may be new or all videos are private/unlisted")
+                print("[Sync]    Database will remain empty - this is OK for new channels")
+                return False
+            
+            print(f"[Sync] ✅ Found {len(videos)} total videos\n")
+            
+            # 5. استخلاص أسماء الكتب وبناء database
+            print("[Sync] 📖 Extracting book names...")
+            db = {"books": []}
+            processed_books = set()  # لتجنب التكرار
+            skipped = 0
+            duplicates = 0
+            
+            for video in videos:
+                # استخلاص اسم الكتاب
+                book_name = extract_book_from_youtube_title(video['title'])
+                
+                if not book_name:
+                    print(f"[Sync] ⏭️  No match: {video['title'][:60]}...")
+                    skipped += 1
+                    continue
+                
+                # تجنب التكرار (case-insensitive)
+                book_lower = book_name.lower()
+                if book_lower in processed_books:
+                    print(f"[Sync] ⏭️  Duplicate: {book_name}")
+                    duplicates += 1
+                    continue
+                
+                processed_books.add(book_lower)
+                
+                # إضافة إلى database
+                entry = {
+                    "main_title": book_name,
+                    "author_name": None,  # يمكن استخلاصه لاحقاً
+                    "date_added": video['published_at'],
+                    "status": "uploaded",
+                    "youtube_video_id": video['video_id'],
+                    "youtube_url": f"https://www.youtube.com/watch?v={video['video_id']}",
+                    "youtube_title": video['title'],  # حفظ العنوان الأصلي
+                    "source": "youtube_sync"
+                }
+                
+                db["books"].append(entry)
+                print(f"[Sync] ✅ Added: {book_name}")
+            
+            # 6. حفظ database
+            if _save_database(db):
+                print(f"\n{'='*60}")
+                print(f"✅ DATABASE SYNCED SUCCESSFULLY!")
+                print(f"   Total books: {len(db['books'])}")
+                print(f"   Skipped: {skipped}")
+                print(f"   Duplicates: {duplicates}")
+                print(f"{'='*60}\n")
+                return True
+            else:
+                print(f"\n❌ Failed to save database")
                 return False
         
-        # Check if any videos were found
-        if not videos:
-            print("[Sync] ⚠️  No videos found on channel")
-            print("[Sync]    Channel may be new or all videos are private/unlisted")
-            print("[Sync]    Database will remain empty - this is OK for new channels")
-            return False
+        except HttpError as e:
+            # Handle quota errors at the top level
+            if e.resp.status == 403 and 'quota' in str(e).lower():
+                print(f"[Sync] ⚠️  API key {key_idx}/{len(api_keys)}: Quota exceeded")
+                if key_idx < len(api_keys):
+                    print(f"[Sync]    Trying next API key...")
+                    last_error = e
+                    continue  # Try next key
+                else:
+                    print(f"[Sync] ❌ All {len(api_keys)} API key(s) quota exceeded!")
+                    return False
+            else:
+                print(f"[Sync] ❌ API error: {e}")
+                last_error = e
+                if key_idx < len(api_keys):
+                    print(f"[Sync]    Trying next API key...")
+                    continue
+                else:
+                    return False
         
-        print(f"[Sync] ✅ Found {len(videos)} total videos\n")
-        
-        # 5. استخلاص أسماء الكتب وبناء database
-        print("[Sync] 📖 Extracting book names...")
-        db = {"books": []}
-        processed_books = set()  # لتجنب التكرار
-        skipped = 0
-        duplicates = 0
-        
-        for video in videos:
-            # استخلاص اسم الكتاب
-            book_name = extract_book_from_youtube_title(video['title'])
-            
-            if not book_name:
-                print(f"[Sync] ⏭️  No match: {video['title'][:60]}...")
-                skipped += 1
+        except Exception as e:
+            print(f"[Sync] ❌ Error with API key {key_idx}/{len(api_keys)}: {e}")
+            last_error = e
+            if key_idx < len(api_keys):
+                print(f"[Sync]    Trying next API key...")
                 continue
-            
-            # تجنب التكرار (case-insensitive)
-            book_lower = book_name.lower()
-            if book_lower in processed_books:
-                print(f"[Sync] ⏭️  Duplicate: {book_name}")
-                duplicates += 1
-                continue
-            
-            processed_books.add(book_lower)
-            
-            # إضافة إلى database
-            entry = {
-                "main_title": book_name,
-                "author_name": None,  # يمكن استخلاصه لاحقاً
-                "date_added": video['published_at'],
-                "status": "uploaded",
-                "youtube_video_id": video['video_id'],
-                "youtube_url": f"https://www.youtube.com/watch?v={video['video_id']}",
-                "youtube_title": video['title'],  # حفظ العنوان الأصلي
-                "source": "youtube_sync"
-            }
-            
-            db["books"].append(entry)
-            print(f"[Sync] ✅ Added: {book_name}")
-        
-        # 6. حفظ database
-        if _save_database(db):
-            print(f"\n{'='*60}")
-            print(f"✅ DATABASE SYNCED SUCCESSFULLY!")
-            print(f"   Total books: {len(db['books'])}")
-            print(f"   Skipped: {skipped}")
-            print(f"   Duplicates: {duplicates}")
-            print(f"{'='*60}\n")
-            return True
-        else:
-            print(f"\n❌ Failed to save database")
-            return False
-            
-    except ImportError:
-        print("[Sync] ❌ google-api-python-client not installed")
-        print("[Sync]    Install with: pip install google-api-python-client")
-        return False
-    except Exception as e:
-        print(f"[Sync] ❌ Sync failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+            else:
+                print(f"[Sync] ❌ All {len(api_keys)} API key(s) failed!")
+                import traceback
+                traceback.print_exc()
+                return False
+    
+    # إذا وصلنا هنا، يعني كل المفاتيح فشلت
+    print(f"[Sync] ❌ All {len(api_keys)} API key(s) failed!")
+    if last_error:
+        print(f"[Sync]    Last error: {str(last_error)[:200]}")
+    return False
 
 
 def ensure_database_synced() -> bool:
