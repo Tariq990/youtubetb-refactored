@@ -3,6 +3,10 @@ Quick Thumbnail Generator
 Generate a simple thumbnail with 3-word main title and 4-word subtitle
 """
 from pathlib import Path
+import sys
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from src.infrastructure.adapters.thumbnail import generate_thumbnail
 import json
 import tempfile
