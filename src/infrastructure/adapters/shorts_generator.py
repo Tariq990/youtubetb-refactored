@@ -560,24 +560,36 @@ CRITICAL STRUCTURE (45-60 seconds when spoken aloud)
 
 PART 1: THE HOOK (0-5 seconds)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Start with ONE of these proven hook techniques:
+Choose DIFFERENT hook styles each time to create variety:
+
+Hook Style Options (rotate between them):
 
 a) Shocking Question:
-   "What if [surprising claim that challenges assumptions]?"
+   "What if everything you believed about [topic] was backwards?"
+   "Ever wonder why [surprising fact]?"
 
 b) Bold Statement:
-   "Everything you know about [topic] is wrong."
+   "Here's the truth nobody tells you about [topic]."
+   "Most people get [topic] completely wrong."
 
-c) Pattern Interrupt:
-   "Stop scrolling. This will change how you think about [topic]."
+c) Direct Challenge:
+   "Think you know [topic]? Think again."
+   "This one idea changed everything about [topic]."
 
 d) Curiosity Gap:
-   "Want to know the secret that [successful people] use?"
+   "The secret to [desirable outcome] isn't what you think."
+   "Successful people know this about [topic]."
+
+e) Personal Hook:
+   "I discovered something powerful about [topic]."
+   "This changed my entire perspective on [topic]."
 
 Hook Requirements:
-✓ 8-12 words maximum
+✓ 8-15 words maximum
 ✓ Create immediate curiosity
 ✓ Promise clear value
+✓ VARY the style - don't always use the same pattern
+✓ AVOID overused phrases like "Stop scrolling"
 ✓ Make viewers think: "I NEED to know more"
 
 PART 2: MAIN CONTENT (5-55 seconds)
@@ -609,16 +621,23 @@ OUTPUT REQUIREMENTS
 ✓ NO **(Sound:...)**, NO **(Visual:...)**, NO **Voiceover:**
 ✓ Just pure spoken narrative that flows naturally
 ✓ Target speaking time: 50-55 seconds (leaves room for CTA at end)
+✓ IMPORTANT: Use DIFFERENT hooks each time - variety is key!
 
 ═══════════════════════════════════════════════════════
-EXAMPLES
+EXAMPLES OF VARIED HOOKS
 ═══════════════════════════════════════════════════════
 
-❌ BAD (has stage directions):
-**(Sound: Music)** Hello! **(Visual: Book cover)** Today we discuss...
+❌ BAD (repetitive):
+"Stop scrolling. This book..."
+"Stop scrolling. Let me tell you..."
+(Using same pattern repeatedly)
 
-✅ GOOD (pure narrative):
-What if I told you that one tiny habit could transform your entire life? Most people try to change everything at once and fail. But this book reveals a different approach. Start with just 1% improvement every single day. Compound that over a year, and you're 37 times better. It's not about willpower. It's about systems. Small changes, massive results. That's the genius of Atomic Habits.
+✅ GOOD (varied hooks):
+Example 1: "What if I told you that one tiny habit could transform your entire life? Most people try to change everything at once and fail. But this book reveals a different approach. Start with just 1% improvement every single day. Compound that over a year, and you're 37 times better. It's not about willpower. It's about systems. Small changes, massive results. That's the genius of Atomic Habits."
+
+Example 2: "Ever wonder why some people achieve their goals while others don't? The difference isn't talent or luck. It's about understanding how habits really work. This book breaks down the science. Make it obvious. Make it attractive. Make it easy. Make it satisfying. Four simple rules that compound into massive change. Master these, and you control your future. All in Atomic Habits."
+
+Example 3: "Here's the truth about building better habits: Motivation is overrated. What you need is a system. This book reveals exactly how. Focus on your identity, not your goals. Every action is a vote for who you want to become. Tiny improvements, repeated daily. That's how you transform. It's not about overnight success. It's about the compound effect. Discover it in Atomic Habits."
 
 ═══════════════════════════════════════════════════════
 

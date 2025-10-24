@@ -776,6 +776,10 @@ def generate_thumbnail(
             if debug:
                 print(f"[thumb] using auto-extracted subtitle color: {subtitle_color}")
 
+    # Define resampling filter once for all image operations
+    RESAMPLING = getattr(Image, "Resampling", None)
+    lanczos = getattr(RESAMPLING, "LANCZOS", None) if RESAMPLING else getattr(Image, "LANCZOS", 1)
+
     if cover_path:
         try:
             bg = Image.open(cover_path).convert("RGB")
@@ -789,8 +793,6 @@ def generate_thumbnail(
             else:
                 nw = W
                 nh = int(nw / bg_ratio)
-            RESAMPLING = getattr(Image, "Resampling", None)
-            lanczos = getattr(RESAMPLING, "LANCZOS", None) if RESAMPLING else getattr(Image, "LANCZOS", 1)
             bg = bg.resize((nw, nh), lanczos)
             bx = (nw - W) // 2
             by = (nh - H) // 2

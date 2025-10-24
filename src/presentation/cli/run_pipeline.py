@@ -557,22 +557,61 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                     print("YouTube API test error:", e)
                     ok = False
 
-            # Gemini API key test
-            gm_key = _discover_gemini_key(repo_root)
-            if not gm_key:
-                print("GEMINI_API_KEY not found (env or secrets/api_key.txt)")
+            # Gemini API key test (with multi-key fallback)
+            gm_keys = []
+            
+            # Load all API keys from api_keys.txt (fallback system)
+            api_keys_path = repo_root / "secrets" / "api_keys.txt"
+            if api_keys_path.exists():
+                try:
+                    content = api_keys_path.read_text(encoding="utf-8")
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            gm_keys.append(line)
+                    if gm_keys:
+                        print(f"📋 Loaded {len(gm_keys)} API key(s) for fallback")
+                except Exception as e:
+                    print(f"⚠️  Failed to read api_keys.txt: {e}")
+            
+            # Fallback to single key if api_keys.txt not found or empty
+            if not gm_keys:
+                single_key = _discover_gemini_key(repo_root)
+                if single_key:
+                    gm_keys.append(single_key)
+            
+            if not gm_keys:
+                print("❌ GEMINI_API_KEY not found (env, secrets/api_keys.txt, or secrets/api_key.txt)")
                 ok = False
             else:
-                try:
-                    import importlib as _il
-                    genai = _il.import_module("google.generativeai")
-                    getattr(genai, "configure")(api_key=gm_key)
-                    Model = getattr(genai, "GenerativeModel")
-                    model = Model("gemini-2.5-flash")
-                    resp = model.generate_content("ping")
-                    _ = getattr(resp, "text", None)
-                except Exception as e:
-                    print("Gemini API key test failed:", e)
+                # Try each API key until one works
+                gemini_working = False
+                for idx, gm_key in enumerate(gm_keys, 1):
+                    try:
+                        print(f"🔑 Trying API key {idx}/{len(gm_keys)}: {gm_key[:20]}...")
+                        import importlib as _il
+                        genai = _il.import_module("google.generativeai")
+                        getattr(genai, "configure")(api_key=gm_key)
+                        Model = getattr(genai, "GenerativeModel")
+                        model = Model("gemini-2.5-flash")
+                        resp = model.generate_content("ping")
+                        _ = getattr(resp, "text", None)
+                        print(f"✅ API key {idx} working!")
+                        gemini_working = True
+                        break  # Success! Stop trying other keys
+                    except Exception as e:
+                        error_str = str(e)
+                        # Check if quota exceeded (429 error)
+                        if "429" in error_str or "quota" in error_str.lower() or "exceeded" in error_str.lower():
+                            print(f"⚠️  API key {idx} quota exceeded, trying next key...")
+                            continue
+                        else:
+                            print(f"❌ API key {idx} failed: {e}")
+                            # For non-quota errors, still try next key
+                            continue
+                
+                if not gemini_working:
+                    print("❌ All Gemini API keys failed or quota exceeded")
                     ok = False
 
             # Thumbnail font check (warning only, not critical)
@@ -606,7 +645,8 @@ def run(
     config_dir: Path = typer.Option(Path("config"), help="Config directory (settings.json/template.html)"),
     secrets_dir: Path = typer.Option(Path("secrets"), help="Secrets directory containing .env"),
     direct_url: Optional[str] = typer.Option(None, help="Process specific YouTube video URL directly (skips search)"),
-    skip_api_check: bool = typer.Option(False, help="Skip API validation (NOT RECOMMENDED)")
+    skip_api_check: bool = typer.Option(False, help="Skip API validation (NOT RECOMMENDED)"),
+    auto_continue: bool = typer.Option(False, "--auto-continue", help="Auto-continue on errors without user input (for batch mode)")
 ):
     """
     🚨 CRITICAL ERROR HANDLING:
@@ -614,7 +654,7 @@ def run(
     the pipeline to exit with code 1, ensuring batch processing stops immediately.
     """
     try:
-        _run_internal(query, runs_dir, config_dir, secrets_dir, direct_url, skip_api_check)
+        _run_internal(query, runs_dir, config_dir, secrets_dir, direct_url, skip_api_check, auto_continue)
     except RuntimeError as e:
         # ❌ CRITICAL: Stage failed after max retries
         console.print(f"\n[bold red]🛑 PIPELINE FAILED: {e}[/bold red]")
@@ -638,7 +678,8 @@ def _run_internal(
     config_dir: Path,
     secrets_dir: Path,
     direct_url: Optional[str],
-    skip_api_check: bool
+    skip_api_check: bool,
+    auto_continue: bool = False
 ):
     """Internal run function with all pipeline logic (wrapped by error handler)."""
     load_dotenv(secrets_dir / ".env")
@@ -706,6 +747,13 @@ def _run_internal(
             # Force user to set up cookies now
             console.print("\n[bold cyan]You must set up YouTube + Amazon cookies to continue.[/bold cyan]")
             console.print("[dim]📖 Full guide: docs/COOKIES_SETUP.md[/dim]")
+            
+            if auto_continue:
+                # Auto mode: skip cookie setup and exit
+                console.print("\n[bold red]❌ Auto-continue mode: Cannot set up cookies automatically[/bold red]")
+                console.print("[yellow]Pipeline cannot continue without valid cookies.[/yellow]")
+                sys.exit(1)
+            
             try:
                 setup_now = input("Set up cookies now? (y/n): ").strip().lower()
                 if setup_now == 'y':
@@ -732,12 +780,17 @@ def _run_internal(
     except Exception as e:
         console.print(f"[bold red]❌ Cookie check error: {e}[/bold red]")
         console.print("[yellow]Cannot verify cookies - pipeline may fail.[/yellow]")
-        try:
-            cont = input("Continue anyway? (yes/no): ").strip().lower()
-            if cont != 'yes':
+        
+        if auto_continue:
+            # Auto mode: continue without asking
+            console.print("[dim]🤖 Auto-continue mode: Proceeding despite cookie error...[/dim]")
+        else:
+            try:
+                cont = input("Continue anyway? (yes/no): ").strip().lower()
+                if cont != 'yes':
+                    sys.exit(1)
+            except KeyboardInterrupt:
                 sys.exit(1)
-        except KeyboardInterrupt:
-            sys.exit(1)
     
     # 🔄 YOUTUBE SYNC: Ensure database.json is up-to-date (syncs from YouTube if empty)
     console.print("\n[bold cyan]🔄 Database Sync Check[/bold cyan]")

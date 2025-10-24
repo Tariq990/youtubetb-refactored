@@ -22,6 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # Go up to project
 # Import subprocess to call run_pipeline as a command
 import subprocess
 
+# Global flag for auto-continue mode
+_BATCH_AUTO_CONTINUE = False
+
 # Rich for beautiful console output
 try:
     from rich.console import Console
@@ -280,8 +283,8 @@ def read_books_from_file(file_path: Path) -> List[str]:
 
 def process_books_batch(
     books: List[str],
-    privacy: str = "public",
-    skip_completed: bool = True
+    skip_completed: bool = True,
+    auto_continue: bool = False
 ) -> dict:
     """
     Process multiple books sequentially with intelligent handling.
@@ -295,12 +298,16 @@ def process_books_batch(
 
     Args:
         books: List of book names (format: "Title | Author" or just "Title")
-        privacy: YouTube privacy status (public/unlisted/private)
         skip_completed: Skip books already completed (default: True)
+        auto_continue: Auto-continue without user prompts (default: False)
 
     Returns:
         Dictionary with processing results
     """
+    # Store auto_continue flag globally for subprocess commands
+    global _BATCH_AUTO_CONTINUE
+    _BATCH_AUTO_CONTINUE = auto_continue
+    
     results = {
         "total": len(books),
         "success": [],
@@ -398,6 +405,10 @@ def process_books_batch(
                 sys.executable, "-m", "src.presentation.cli.run_pipeline",
                 pipeline_input
             ]
+            
+            # Add auto-continue flag if batch is in auto mode
+            if _BATCH_AUTO_CONTINUE:
+                cmd.append("--auto-continue")
 
             if console:
                 if action == "resume":
@@ -678,8 +689,8 @@ EXAMPLES:
   # Process all books (including already completed)
   python -m src.presentation.cli.run_batch --no-skip
   
-  # Combine options
-  python -m src.presentation.cli.run_batch --file books.txt --privacy public
+  # Use auto-continue for unattended processing
+  python -m src.presentation.cli.run_batch --file books.txt --auto-continue
         """
     )
 
@@ -691,17 +702,15 @@ EXAMPLES:
     )
 
     parser.add_argument(
-        "--privacy",
-        type=str,
-        choices=["public", "unlisted", "private"],
-        default="public",
-        help="YouTube video privacy status (default: public)"
-    )
-    
-    parser.add_argument(
         "--no-skip",
         action="store_true",
         help="Process all books, even if already completed (default: skip completed)"
+    )
+    
+    parser.add_argument(
+        "--auto-continue",
+        action="store_true",
+        help="Auto-continue without user prompts (for unattended batch processing)"
     )
 
     args = parser.parse_args()
@@ -723,7 +732,6 @@ EXAMPLES:
         print("\n🎬 YouTube Book Video Pipeline - Intelligent Batch Mode")
     
     print(f"📂 Reading from: {file_path}")
-    print(f"🔒 Privacy: {args.privacy}")
     print(f"⏭️  Skip completed: {not args.no_skip}")
     print()
 
@@ -754,20 +762,26 @@ EXAMPLES:
         print(f"\n⚠️ About to process {len(books)} books sequentially.")
         print("   This may take several hours depending on video lengths.")
     
-    response = input("\nContinue? (yes/no): ").strip().lower()
-
-    if response not in ['yes', 'y', 'نعم']:
+    if args.auto_continue:
+        # Auto mode: skip confirmation
         if console:
-            console.print("[red]❌ Cancelled by user[/red]")
+            console.print("[dim]🤖 Auto-continue mode: Starting batch without confirmation...[/dim]")
         else:
-            print("❌ Cancelled by user")
-        return 0
+            print("🤖 Auto-continue mode: Starting batch without confirmation...")
+    else:
+        response = input("\nContinue? (yes/no): ").strip().lower()
+        if response not in ['yes', 'y', 'نعم']:
+            if console:
+                console.print("[red]❌ Cancelled by user[/red]")
+            else:
+                print("❌ Cancelled by user")
+            return 0
 
     # Process books with intelligent handling
     results = process_books_batch(
         books=books,
-        privacy=args.privacy,
-        skip_completed=not args.no_skip  # Invert the flag
+        skip_completed=not args.no_skip,  # Invert the flag
+        auto_continue=args.auto_continue
     )
 
     # Exit code based on results

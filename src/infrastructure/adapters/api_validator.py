@@ -246,11 +246,43 @@ class APIValidator:
             return False, f"❌ Connection error: {str(e)[:50]}"
 
     def validate_gemini_api(self) -> Tuple[bool, str]:
-        """Validate Google Gemini API"""
-        api_key = os.getenv('GEMINI_API_KEY')
+        """Validate Google Gemini API with fallback support"""
+        # Load all API keys (same as process.py _configure_model)
+        api_keys = []
+        
+        # 1. Try environment variable first
+        env_key = os.getenv('GEMINI_API_KEY')
+        if env_key:
+            api_keys.append(env_key.strip())
+        
+        # 2. Load from api_keys.txt (multiple keys with fallback)
+        repo_root = Path(__file__).resolve().parents[3]
+        api_keys_file = repo_root / "secrets" / "api_keys.txt"
+        if api_keys_file.exists():
+            try:
+                lines = api_keys_file.read_text(encoding="utf-8").splitlines()
+                for line in lines:
+                    line = line.strip()
+                    # Skip empty lines and comments
+                    if line and not line.startswith("#"):
+                        api_keys.append(line)
+            except Exception:
+                pass
+        
+        # 3. Fallback to single api_key.txt
+        if not api_keys:
+            for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
+                try:
+                    if f.exists():
+                        key = f.read_text(encoding="utf-8").strip()
+                        if key:
+                            api_keys.append(key)
+                            break
+                except Exception:
+                    pass
 
-        if not api_key:
-            return False, "❌ API key not found in environment"
+        if not api_keys:
+            return False, "❌ API key not found in environment or secrets/api_keys.txt"
 
         # Load model name from settings.json (same as pipeline uses)
         model_name = "gemini-2.5-flash"  # Default
@@ -263,29 +295,48 @@ class APIValidator:
         except Exception:
             pass  # Use default if settings.json fails
 
-        try:
-            genai.configure(api_key=api_key)  # type: ignore
-            # Use same model as pipeline (from settings.json)
-            model = genai.GenerativeModel(model_name)  # type: ignore
+        # Try each API key until one works
+        last_error = None
+        for api_key in api_keys:
+            try:
+                genai.configure(api_key=api_key)  # type: ignore
+                # Use same model as pipeline (from settings.json)
+                model = genai.GenerativeModel(model_name)  # type: ignore
 
-            # Test with a simple prompt
-            response = model.generate_content("Say 'OK' if you receive this.")
+                # Test with a simple prompt
+                response = model.generate_content("Say 'OK' if you receive this.")
 
-            if response.text:
-                return True, f"✅ Valid - Working ({model_name})"
-            else:
-                return False, "❌ No response from API"
+                if response.text:
+                    keys_msg = f" ({len(api_keys)} keys available)" if len(api_keys) > 1 else ""
+                    return True, f"✅ Valid - Working ({model_name}){keys_msg}"
+                else:
+                    last_error = "No response from API"
+                    continue
 
-        except Exception as e:
-            error_msg = str(e).lower()
-            if 'api key' in error_msg or 'invalid' in error_msg:
-                return False, "❌ Invalid API key"
-            elif 'quota' in error_msg:
-                return False, "⚠️ Quota exceeded"
-            elif 'not found' in error_msg or '404' in error_msg:
-                return False, f"❌ Model '{model_name}' not available - Check API access"
-            else:
-                return False, f"❌ Error: {str(e)[:50]}"
+            except Exception as e:
+                error_msg = str(e).lower()
+                last_error = str(e)
+                
+                # If quota error, try next key
+                if 'quota' in error_msg or '429' in error_msg:
+                    continue
+                
+                # Other errors, try next key
+                if 'api key' in error_msg or 'invalid' in error_msg:
+                    continue
+                if 'not found' in error_msg or '404' in error_msg:
+                    continue
+                
+                # Unknown error, try next key
+                continue
+
+        # All keys failed
+        if '429' in str(last_error) or 'quota' in str(last_error).lower():
+            return False, f"⚠️ All {len(api_keys)} keys exceeded quota"
+        elif 'api key' in str(last_error).lower() or 'invalid' in str(last_error).lower():
+            return False, "❌ All keys invalid"
+        else:
+            return False, f"❌ All keys failed: {str(last_error)[:50]}"
 
     def validate_google_books_api(self) -> Tuple[bool, str]:
         """Validate Google Books API (optional but recommended)"""

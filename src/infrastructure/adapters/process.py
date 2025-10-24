@@ -145,20 +145,46 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
 
 
 def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
-    API_KEY = os.environ.get("GEMINI_API_KEY")
-    if not API_KEY:
-        # src/infrastructure/adapters/process.py -> need parents[3] to reach repo root
-        repo_root = Path(__file__).resolve().parents[3]
+    # Load all API keys (with fallback support)
+    api_keys = []
+    
+    # 1. Try environment variable first
+    env_key = os.environ.get("GEMINI_API_KEY")
+    if env_key:
+        api_keys.append(env_key.strip())
+    
+    # 2. Load from api_keys.txt (multiple keys with fallback)
+    repo_root = Path(__file__).resolve().parents[3]
+    api_keys_file = repo_root / "secrets" / "api_keys.txt"
+    if api_keys_file.exists():
+        try:
+            lines = api_keys_file.read_text(encoding="utf-8").splitlines()
+            for line in lines:
+                line = line.strip()
+                # Skip empty lines and comments
+                if line and not line.startswith("#"):
+                    api_keys.append(line)
+        except Exception as e:
+            print(f"⚠️  Could not read api_keys.txt: {e}")
+    
+    # 3. Fallback to single api_key.txt
+    if not api_keys:
         for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
             try:
                 if f.exists():
-                    API_KEY = f.read_text(encoding="utf-8").strip()
-                    break
+                    key = f.read_text(encoding="utf-8").strip()
+                    if key:
+                        api_keys.append(key)
+                        break
             except Exception:
                 pass
-    if not API_KEY:
-        print("GEMINI_API_KEY not found. Set env or add secrets/api_key.txt")
+    
+    if not api_keys:
+        print("❌ GEMINI_API_KEY not found. Set env or add secrets/api_keys.txt")
         return None
+    
+    print(f"📋 Loaded {len(api_keys)} API key(s) for fallback")
+    
     # Determine model name from env or settings.json
     model_name = os.environ.get("GEMINI_MODEL")
     if not model_name and config_dir:
@@ -180,38 +206,66 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
             sys.stderr.close()
         sys.stderr = _original_stderr
     
-    getattr(genai, "configure")(api_key=API_KEY)
     Model = getattr(genai, "GenerativeModel")
     default_name = "gemini-2.5-flash"
-    try_name = model_name or default_name
-    model = Model(try_name)
     
-    # CRITICAL: Test API with a real call to catch errors early (403, quota, etc.)
-    try:
-        _ = model.generate_content("ping")
-        return model
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Gemini API validation failed: {error_msg[:200]}")
-        
-        # Try fallback to default model if using custom model
-        if try_name != default_name:
-            print(f"⚠️  Trying fallback to default model: {default_name}")
-            try:
-                model = Model(default_name)
-                _ = model.generate_content("ping")
-                print(f"✅ Fallback to {default_name} succeeded")
-                return model
-            except Exception as e2:
-                print(f"❌ Fallback also failed: {str(e2)[:200]}")
-        
-        # Both failed - API is truly broken
-        print("❌ CRITICAL: Gemini API is not working. Check:")
-        print("   1. API key is valid")
-        print("   2. Generative Language API is enabled in Google Cloud Console")
-        print("   3. Billing is set up and quota not exceeded")
-        print(f"   4. Visit: https://console.developers.google.com/apis/api/generativelanguage.googleapis.com")
-        return None
+    # Try each API key until one works
+    last_error = None
+    for key_idx, api_key in enumerate(api_keys, start=1):
+        try_name = default_name  # Initialize before try block to avoid "possibly unbound" error
+        try:
+            # Mask key for display (show first 10 chars only)
+            masked_key = api_key[:10] + "..." if len(api_key) > 10 else api_key
+            print(f"🔑 Trying API key {key_idx}/{len(api_keys)}: {masked_key}")
+            
+            # Configure with this key
+            getattr(genai, "configure")(api_key=api_key)
+            
+            # Try requested model
+            try_name = model_name or default_name
+            model = Model(try_name)
+            
+            # CRITICAL: Test API with a real call to catch errors early
+            _ = model.generate_content("ping")
+            print(f"✅ API key {key_idx} working with model: {try_name}")
+            return model
+            
+        except Exception as e:
+            error_msg = str(e)
+            last_error = error_msg
+            
+            # Check if it's a quota error (429)
+            if "429" in error_msg or "quota" in error_msg.lower():
+                print(f"⚠️  API key {key_idx} quota exceeded: {error_msg[:100]}")
+                # Try next key
+                continue
+            else:
+                print(f"❌ API key {key_idx} failed: {error_msg[:100]}")
+                
+                # Try fallback to default model if using custom model
+                if try_name != default_name:
+                    print(f"   Trying fallback to default model: {default_name}")
+                    try:
+                        model = Model(default_name)
+                        _ = model.generate_content("ping")
+                        print(f"   ✅ Fallback to {default_name} succeeded")
+                        return model
+                    except Exception as e2:
+                        print(f"   ❌ Fallback also failed: {str(e2)[:100]}")
+                
+                # Try next key
+                continue
+    
+    # All keys failed
+    print(f"\n❌ CRITICAL: All {len(api_keys)} API key(s) failed!")
+    print(f"   Last error: {last_error[:200] if last_error else 'Unknown'}")
+    print("   Possible causes:")
+    print("   1. All keys exceeded quota (wait for reset)")
+    print("   2. API keys are invalid")
+    print("   3. Generative Language API not enabled")
+    print("   4. Billing not set up")
+    print(f"   5. Visit: https://console.developers.google.com/apis/api/generativelanguage.googleapis.com")
+    return None
 
 
 def _clean_source_text(model, text: str, prompts: dict) -> str:
