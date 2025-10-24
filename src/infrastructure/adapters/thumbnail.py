@@ -577,10 +577,7 @@ def _calculate_optimal_title_size(
         else:
             size *= scaling.get("3_words_short", 1.1)  # Keep small for short words
     elif word_count == 4:
-        before = size
-        scaling_value = scaling.get("4_words", 2.5)
-        size *= scaling_value
-        print(f"[thumb] DEBUG 4-word scaling: {before:.1f} × {scaling_value} = {size:.1f}")
+        size *= scaling.get("4_words", 1.7)
     elif word_count == 5:
         size *= scaling.get("5_words", 1.0)
     elif word_count == 6:
