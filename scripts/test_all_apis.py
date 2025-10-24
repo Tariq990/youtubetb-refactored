@@ -6,8 +6,8 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path (parent.parent = repo root, not scripts/)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 print("="*70)
 print("🧪 TESTING ALL APIs IN YOUTUBETB PROJECT")

@@ -27,7 +27,9 @@ cd youtubetb-refactored
 # 2. Run complete installation (as Administrator)
 install_complete.bat
 ```
- 
+git pull origin master
+install_complete.bat
+
 **This will automatically:**
 - ✅ Install Python 3.11+ (if needed)
 - ✅ Install FFmpeg
@@ -64,14 +66,43 @@ git commit -m "Add encrypted secrets"
 git push
 ```
 
-### On New Machine:
+### On New Machine (Decryption):
 
+The installer (`install_complete.bat`) will **automatically decrypt secrets** if `secrets_encrypted/` exists.
+
+**Option 1: Interactive (Default)**
 ```batch
-# The install_complete.bat will ask to decrypt automatically
-# Or run manually:
-python scripts\decrypt_secrets.py
-# Enter the same password you used for encryption
+# Just run the installer - it will prompt for password
+install_complete.bat
+# Enter password when asked
 ```
+
+**Option 2: Fully Automated (No Prompts)**
+```batch
+# Set password as environment variable BEFORE running installer
+setx YTTB_SECRETS_PASSWORD "your_encryption_password"
+# Open NEW CMD window (to load the variable)
+install_complete.bat
+# Decryption happens automatically with no prompts
+```
+
+**Option 3: Manual Decryption Later**
+```batch
+# Decrypt manually anytime:
+python scripts\decrypt_secrets.py
+
+# Or with password from file:
+python scripts\decrypt_secrets.py --password-file C:\path\to\password.txt
+
+# Or with password directly (not recommended - visible in process list):
+python scripts\decrypt_secrets.py --password "your_password"
+```
+
+**Environment Variable Method:**
+- ✅ Best for automated/headless setups
+- ✅ No manual input needed
+- ⚠️ Password stored in Windows environment (use `setx /M` for system-wide)
+- To remove later: `reg delete "HKCU\Environment" /v YTTB_SECRETS_PASSWORD /f`
 
 ---
 
