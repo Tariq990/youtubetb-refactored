@@ -803,9 +803,41 @@ def upload_video(
         except Exception as e:
             error = e
             retry += 1
-            print(f"❌ Upload error (attempt {retry}/6): {str(e)[:100]}")
+            
+            # Enhanced error logging for keyword/tag issues
+            error_str = str(e)
+            print(f"\n{'='*60}")
+            print(f"❌ UPLOAD ERROR (Attempt {retry}/6)")
+            print(f"{'='*60}")
+            print(f"Error Type: {type(e).__name__}")
+            print(f"Error Message: {error_str}")
+            
+            # Special handling for keyword/tag errors
+            if "keyword" in error_str.lower() or "tag" in error_str.lower():
+                print(f"\n⚠️  TAG/KEYWORD ERROR DETECTED!")
+                print(f"\n📋 Tags that were sent to YouTube API:")
+                print(f"   Count: {len(tags)}")
+                print(f"   Tags: {tags}")
+                print(f"\n🔍 Checking each tag:")
+                for i, tag in enumerate(tags, 1):
+                    tag_len = len(tag)
+                    has_special = any(c for c in tag if not (c.isalnum() or c.isspace()))
+                    print(f"   {i}. '{tag}' (len={tag_len}, special_chars={has_special})")
+                    if tag_len > 30:
+                        print(f"      ⚠️  TOO LONG! (max 30 chars)")
+                    if has_special:
+                        special_chars = [c for c in tag if not (c.isalnum() or c.isspace())]
+                        print(f"      ⚠️  HAS SPECIAL CHARS: {special_chars}")
+                print(f"\n📊 API Request Body snippet:")
+                print(f"   'tags': {tags[:10]}..." if len(tags) > 10 else f"   'tags': {tags}")
+            
             if debug:
-                print(f"[upload] chunk error (attempt {retry}):", e)
+                print(f"\n[upload] Full exception details:")
+                import traceback
+                traceback.print_exc()
+            
+            print(f"{'='*60}\n")
+            
             if retry > 5:
                 print("❌ Upload failed after 6 attempts")
                 break
