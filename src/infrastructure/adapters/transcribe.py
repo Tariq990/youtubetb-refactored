@@ -10,7 +10,7 @@ import subprocess  # CRITICAL: needed for check=True error handling
 
 
 # Workspace dirs
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]  # Fixed: was parents[2], should be parents[3] to reach repo root
 TMP_SUBS_DIR = REPO_ROOT / "tmp" / "subs"
 
 

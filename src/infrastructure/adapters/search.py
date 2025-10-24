@@ -81,7 +81,7 @@ def main(query: str | None = None, output_dir: os.PathLike | None = None):
     try:
         import sys
         from pathlib import Path as _Path
-        sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+        sys.path.insert(0, str(_Path(__file__).resolve().parents[3]  # Fixed: parents[3] to reach repo root))
         from src.shared.utils.language_detector import detect_language
         detected_lang = detect_language(book_name)
     except Exception:

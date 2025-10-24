@@ -68,7 +68,7 @@ def _gen(model, prompt: str, mime_type: str = "text/plain") -> str:
 def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     API_KEY = os.environ.get("GEMINI_API_KEY")
     if not API_KEY:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = Path(__file__).resolve().parents[3]  # Fixed: parents[3] to reach repo root
         for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
             try:
                 if f.exists():

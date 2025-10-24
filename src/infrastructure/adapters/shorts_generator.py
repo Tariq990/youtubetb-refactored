@@ -1208,7 +1208,7 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
             api_key = os.getenv("GEMINI_API_KEY")
             if not api_key:
                 # Fallback to secrets/api_key.txt
-                repo_root = Path(__file__).resolve().parents[2]
+                repo_root = Path(__file__).resolve().parents[3]  # Fixed: parents[3] to reach repo root
                 for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
                     try:
                         if f.exists():

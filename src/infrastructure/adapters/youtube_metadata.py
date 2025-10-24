@@ -37,7 +37,7 @@ def _fmt(tpl: str, **values: str) -> str:
 def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     API_KEY = os.environ.get("GEMINI_API_KEY")
     if not API_KEY:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = Path(__file__).resolve().parents[3]  # Fixed: parents[3] to reach repo root
         for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
             try:
                 if f.exists():
@@ -191,7 +191,7 @@ def _add_amazon_link_to_description(
     """
     # Load settings
     if config_dir is None:
-        config_dir = Path(__file__).resolve().parents[2] / "config"
+        config_dir = Path(__file__).resolve().parents[3] / "config"  # Fixed: parents[3]
 
     settings_path = Path(config_dir) / "settings.json"
     if not settings_path.exists():
@@ -791,7 +791,7 @@ if __name__ == "__main__":
         arg_path = None
     if not arg_path or not arg_path.exists():
         # Fallback to runs/latest: support both direct file and path.txt pointer
-        root = Path(__file__).resolve().parents[2]
+        root = Path(__file__).resolve().parents[3]  # Fixed: parents[3]
         latest_dir = root / "runs" / "latest"
         candidate = latest_dir / "output.titles.json"
         if candidate.exists():
@@ -809,7 +809,7 @@ if __name__ == "__main__":
     if not arg_path:
         print("Usage: python -m src.pipeline.youtube_metadata <path/to/output.titles.json>")
         raise SystemExit(2)
-    cfg_dir = Path(__file__).resolve().parents[2] / "config"
+    cfg_dir = Path(__file__).resolve().parents[3] / "config"  # Fixed: parents[3]
     res = main(arg_path, cfg_dir)
     if not res:
         raise SystemExit(1)

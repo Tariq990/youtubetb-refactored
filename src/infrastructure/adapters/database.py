@@ -11,7 +11,7 @@ import json
 
 def _get_database_path() -> Path:
     """Get the path to database.json in repo root."""
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[3]  # Fixed: parents[3] to reach repo root
     return repo_root / "database.json"
 
 
