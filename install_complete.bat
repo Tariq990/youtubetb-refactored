@@ -58,8 +58,9 @@ if %errorLevel% neq 0 (
     cd /d "%TEMP%\youtubetb_install"
     
     :: Download Python 3.11.9 installer
-    echo    Downloading Python installer...
-    powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'python_installer.exe'}"
+    echo    Downloading Python installer (~30 MB)...
+    echo    ⏳ Please wait, this may take 1-3 minutes...
+    powershell -Command "Write-Host '    Progress: ' -NoNewline; $ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $start = Get-Date; try { Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'python_installer.exe'; $elapsed = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); Write-Host \"✅ Downloaded in $elapsed seconds\" } catch { Write-Host '❌ Download failed!' -ForegroundColor Red; exit 1 }"
     
     if not exist "python_installer.exe" (
         echo ❌ Failed to download Python installer!
@@ -144,9 +145,19 @@ if %errorLevel% neq 0 (
     if not exist "!FFMPEG_DIR!" mkdir "!FFMPEG_DIR!"
     
     :: Download FFmpeg
-    echo    Downloading FFmpeg...
+    echo    Downloading FFmpeg (~90 MB)...
+    echo    ⏳ Please wait, this may take 2-5 minutes depending on your internet speed...
     cd /d "%TEMP%\youtubetb_install"
-    powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'}"
+    
+    :: Download with progress indication
+    powershell -Command "Write-Host '    Progress: ' -NoNewline; $ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $start = Get-Date; try { Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'; $elapsed = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); Write-Host \"✅ Downloaded in $elapsed seconds\" } catch { Write-Host '❌ Download failed!' -ForegroundColor Red; exit 1 }"
+    
+    if %errorLevel% neq 0 (
+        echo.
+        echo ❌ PowerShell download failed! Trying alternative method...
+        echo    Please wait...
+        curl -L -o ffmpeg.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" 2>nul
+    )
     
     if not exist "ffmpeg.zip" (
         echo ❌ Failed to download FFmpeg!
@@ -280,12 +291,16 @@ if not exist "requirements.txt" (
     exit /b 1
 )
 
-echo    Installing dependencies (this may take a few minutes)...
-pip install -r requirements.txt --quiet
+echo    Installing dependencies (~500 MB, 5-10 minutes)...
+echo    ⏳ This will download and install 60+ Python packages...
+echo    📊 Progress will be shown below:
+echo.
+pip install -r requirements.txt
 if %errorLevel% neq 0 (
+    echo.
     echo ❌ Failed to install dependencies!
-    echo    Trying again with verbose output...
-    pip install -r requirements.txt
+    echo    Some packages may have failed. Retrying problematic packages...
+    pip install -r requirements.txt --no-cache-dir
     pause
     exit /b 1
 )
