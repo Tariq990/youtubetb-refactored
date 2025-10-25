@@ -519,6 +519,9 @@ def extract_book_from_youtube_title(title: str) -> Optional[str]:
         
         "Master Your Money – Rich Dad Poor Dad | Book Summary"
         → "Rich Dad Poor Dad"
+        
+        "Atomic Habits"  (فقط اسم الكتاب بدون format)
+        → "Atomic Habits"
     
     Args:
         title: عنوان الفيديو من YouTube
@@ -528,6 +531,10 @@ def extract_book_from_youtube_title(title: str) -> Optional[str]:
     """
     if not title:
         return None
+    
+    # تنظيف HTML entities (مثل &#39; → ')
+    import html
+    title = html.unescape(title)
     
     # Pattern 1: "– Book Name | Book Summary" (الصيغة الأساسية)
     pattern1 = r'–\s*(.+?)\s*\|\s*Book Summary'
@@ -547,6 +554,21 @@ def extract_book_from_youtube_title(title: str) -> Optional[str]:
         # تأكد أنه ليس جملة طويلة (أسماء الكتب عادة < 10 كلمات)
         if len(candidate.split()) <= 10:
             return candidate
+    
+    # Pattern 3: فقط اسم الكتاب (بدون أي format - للفيديوهات القديمة)
+    # يجب أن يكون قصير (< 10 كلمات) وبدون كلمات زائدة
+    cleaned = re.sub(r'[🎯💡🔥✨]+', '', title).strip()
+    words = cleaned.split()
+    
+    # إذا العنوان قصير (2-10 كلمات) واحتمال يكون اسم كتاب
+    if 2 <= len(words) <= 10:
+        # تحقق: ما فيه كلمات spam (review, summary, guide, etc.)
+        spam_words = {'review', 'summary', 'guide', 'how', 'to', 'why', 'what', 'the', 'best'}
+        title_lower = cleaned.lower()
+        
+        # إذا ما فيه كلمات spam، احتمال اسم كتاب
+        if not any(word in title_lower.split() for word in spam_words):
+            return cleaned
     
     return None
 
