@@ -871,7 +871,7 @@ def generate_thumbnail(
     run_dir: Path,
     titles_json: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 110,  # Spacing between title and subtitle (increased to 110px)
+    subtitle_gap: int = 145,  # Spacing between title and subtitle (increased to 145px)
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
