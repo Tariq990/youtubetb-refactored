@@ -160,8 +160,39 @@ def pause(msg: str = "Press Enter to continue...") -> None:
 def run_api_check():
     """Run comprehensive API and requirements check"""
     console.clear()
-    console.rule("[bold cyan]🔍 API Keys Validation")
-    console.print("[dim]Testing all required API keys for the pipeline...[/dim]\n")
+    console.rule("[bold cyan]🔍 System Environment & API Validation")
+    console.print("[dim]Testing system dependencies and API keys...[/dim]\n")
+
+    # Step 1: Run check_system.py first
+    console.print("[bold cyan]Step 1: System Environment Check[/bold cyan]")
+    console.print("="*60)
+    
+    check_system_script = repo_root() / "check_system.py"
+    
+    if check_system_script.exists():
+        try:
+            result = subprocess.run(
+                [py(), str(check_system_script)],
+                cwd=repo_root(),
+                capture_output=False  # Show output directly
+            )
+            
+            if result.returncode != 0:
+                console.print("\n[yellow]⚠️  System check found some issues.[/yellow]")
+            else:
+                console.print("\n[green]✅ System environment check passed![/green]")
+                
+        except Exception as e:
+            console.print(f"[red]❌ Error running system check: {e}[/red]")
+    else:
+        console.print(f"[yellow]⚠️  check_system.py not found at {check_system_script}[/yellow]")
+        console.print("[dim]Skipping system environment check...[/dim]")
+    
+    console.print("\n" + "="*60 + "\n")
+    
+    # Step 2: Run API validation
+    console.print("[bold cyan]Step 2: API Keys Validation[/bold cyan]")
+    console.print("="*60 + "\n")
 
     try:
         from src.infrastructure.adapters.api_validator import APIValidator
