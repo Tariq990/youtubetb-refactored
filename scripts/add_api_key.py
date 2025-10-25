@@ -556,8 +556,8 @@ def main():
     print("🔑 Smart API Key Manager - YouTubeTB")
     print("="*60)
     
-    # Get repo root
-    repo_root = Path(__file__).parent
+    # Get repo root (we're in scripts/ folder, need to go up one level)
+    repo_root = Path(__file__).resolve().parent.parent
     
     # Scan existing keys first
     existing_results = scan_existing_keys(repo_root)
