@@ -191,7 +191,7 @@ def run_cleanup():
     console.print("[yellow]⚠️  WARNING: This will delete:[/yellow]")
     console.print("   • [red]runs/[/red] - All processed videos and outputs")
     console.print("   • [red]tmp/[/red] - Temporary files")
-    console.print("   • [red]src/database.json[/red] - Local database (can resync from YouTube)")
+    console.print("   • [red]database.json[/red] - Local database (can resync from YouTube)")
     console.print("   • [red]used_pexels_videos.json[/red] - Pexels video tracking")
     console.print("\n[dim]Note: This will NOT delete secrets/ or config/[/dim]\n")
     
@@ -215,7 +215,7 @@ def run_cleanup():
     items_to_delete = [
         ("runs/", "directory"),
         ("tmp/", "directory"),
-        ("src/database.json", "file"),
+        ("database.json", "file"),  # Fixed: database.json is in root, not src/
         ("used_pexels_videos.json", "file")
     ]
     
