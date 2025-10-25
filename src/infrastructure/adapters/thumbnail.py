@@ -871,7 +871,7 @@ def generate_thumbnail(
     run_dir: Path,
     titles_json: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 80,  # Increased spacing between title and subtitle
+    subtitle_gap: int = 110,  # Spacing between title and subtitle (increased to 110px)
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
@@ -1320,8 +1320,7 @@ def generate_thumbnail(
             print(f"[thumb] title lines: {len(title_lines)} | line_gap: {line_gap}px")
         except Exception:
             pass
-    sub_gap_before = int(max(0, subtitle_gap)) if subtitle else 0
-
+    
     # Process subtitle: split into 2 lines if more than 3 words
     subtitle_lines = []
     if subtitle:
@@ -1338,6 +1337,11 @@ def generate_thumbnail(
                 print(f"[thumb] subtitle split into 2 lines ({len(subtitle_words)} words)")
         else:
             subtitle_lines = [subtitle_text]
+    
+    # UNIFIED SPACING: 110px for all subtitles (single-line and multi-line)
+    sub_gap_before = int(max(0, subtitle_gap)) if subtitle else 0  # Use consistent 110px gap
+    if debug and subtitle:
+        print(f"[thumb] subtitle gap: {subtitle_gap}px (lines: {len(subtitle_lines)})")
 
     # Compute total block height: sum of title line heights + gaps + subtitle height (if any)
     title_heights = [

@@ -1661,6 +1661,25 @@ def _run_internal(
                         privacy_status="public",  # Always public for main video
                         upload_thumbnail=True,
                     )
+                except RuntimeError as e:
+                    # Treat quotaExceeded as non-retryable: save summary and abort retries
+                    err_str = str(e)
+                    print("Upload error (runtime):", err_str)
+                    if "quotaExceeded" in err_str or "quota exceeded" in err_str.lower() or "exceeded your current quota" in err_str.lower():
+                        # Record failed upload stage and persist summary immediately
+                        try:
+                            summary["stages"].append({
+                                "name": "upload",
+                                "status": "failed",
+                                "error": err_str,
+                            })
+                            _save_summary(d["root"], summary)
+                        except Exception:
+                            pass
+                        # Re-raise to abort the retry loop and surface the non-retryable error
+                        raise
+                    # Otherwise treat as a transient runtime error and allow retry
+                    video_id = None
                 except Exception as e:
                     print("Upload error:", e)
                     video_id = None

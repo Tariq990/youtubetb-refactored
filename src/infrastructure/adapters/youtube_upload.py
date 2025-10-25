@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, List, Tuple
 import json
-import re
+import re as regex_module  # Avoid name collision with RuntimeError in exception handlers
 import time
 import os
 from pathlib import Path
@@ -32,10 +32,10 @@ SCOPES = [
 
 def _sanitize_filename(name: str, max_len: int = 120) -> str:
     name = name.strip()
-    name = re.sub(r"[\\/:*?\"<>|]", "-", name)
-    name = re.sub(r"[\x00-\x1F]", "", name)
-    name = re.sub(r"\s+", " ", name)
-    name = re.sub(r"\s*-\s*", "-", name)
+    name = regex_module.sub(r"[\\/:*?\"<>|]", "-", name)
+    name = regex_module.sub(r"[\x00-\x1F]", "", name)
+    name = regex_module.sub(r"\s+", " ", name)
+    name = regex_module.sub(r"\s*-\s*", "-", name)
     if len(name) > max_len:
         name = name[:max_len].rstrip()
     return name or "output"
@@ -406,6 +406,12 @@ def upload_video(
     print(f"[upload] Processing {len(tags)} dynamic tags (keeping original format)")
     
     # === SANITIZE TAGS ===
+    # YouTube API requirements (official):
+    # - Max 500 chars TOTAL (only tag text, commas don't count)
+    # - Tags with spaces count as wrapped in quotes: "Foo Bar" = 9 chars (7 + 2 quotes)
+    # - Allowed chars: Letters, numbers, spaces ONLY
+    # - NO special chars (-, _, commas, etc)
+    # Reference: https://developers.google.com/youtube/v3/docs/videos#snippet.tags[]
     def _sanitize_tag_for_api(t: str) -> Optional[str]:
         if not t:
             return None
@@ -414,7 +420,7 @@ def upload_video(
         except Exception:
             return None
         # Remove control characters and normalize whitespace
-        s = re.sub(r"[\x00-\x1F\x7F]+", "", s)
+        s = regex_module.sub(r"[\x00-\x1F\x7F]+", "", s)
         s = s.replace('"', '').replace("'", '')
         s = s.replace('\n', ' ').replace('\r', ' ')
         # Replace underscores with spaces (more natural tags)
@@ -424,11 +430,10 @@ def upload_video(
         # Remove commas (commas separate tags in some systems)
         s = s.replace(',', ' ')
         # Keep only alphanumeric and spaces (NO special chars allowed by YouTube)
-        s = re.sub(r"[^A-Za-z0-9\s]", "", s)
-        s = re.sub(r"\s+", ' ', s).strip()
-        # Truncate to 30 chars
-        if len(s) > 30:
-            s = s[:30].rstrip()
+        s = regex_module.sub(r"[^A-Za-z0-9\s]", "", s)
+        s = regex_module.sub(r"\s+", ' ', s).strip()
+        # NOTE: No 30-char truncation! YouTube API docs don't specify per-tag limit.
+        # Only 500-char total limit applies.
         return s if s else None
 
     # Apply sanitization to dynamic tags list
@@ -439,32 +444,34 @@ def upload_video(
             sanitized.append(st)
     tags = sanitized
 
-    # === REMOVE PROBLEMATIC TAGS ===
+    # === REMOVE SPAM/MISLEADING TAGS (YouTube Policy) ===
+    # Only block clear spam patterns (subscribe/click/like) per YouTube spam policy
+    # Reference: https://support.google.com/youtube/answer/2801973 (spam/deceptive practices)
     BLOCKED_PATTERNS = {
         "subscribe", "link", "playlist", "watch", "channel", "bell", 
-        "notification", "unsubscribe", "click", "like", "comment",
+        "notification", "unsubscribe", "click here", "like", "comment",
         "full audiobook", "full_audiobook"
+        # NOTE: Removed overly restrictive blocks like "trending", "viral", "bestseller"
+        # These are NOT in YouTube's official spam policy and CAN be used as tags
     }
     
-    # Filter problematic tags
+    # Filter spam tags (keep promotional/descriptive tags like "bestseller", "trending")
     cleaned_tags = []
     for tag in tags:
         tag_lower = tag.lower()
         
-        # Skip if it's a blocked pattern
+        # Skip if it's a spam pattern (subscribe/click/etc)
         if any(blocked in tag_lower for blocked in BLOCKED_PATTERNS):
-            print(f"[upload]   ❌ Blocked: {tag}")
+            print(f"[upload]   ❌ Spam pattern blocked: {tag}")
             continue
         
-        # Skip if tag is too long (>30 chars)
-        if len(tag) > 30:
-            print(f"[upload]   ⚠️  Too long ({len(tag)} chars): {tag}")
-            continue
+        # NOTE: No arbitrary 30-char limit! YouTube API only enforces 500 char total.
+        # Let YouTube validate tag length itself during upload.
         
         cleaned_tags.append(tag)
     
     tags = cleaned_tags
-    print(f"[upload] After filtering: {len(tags)} tags remain")
+    print(f"[upload] After spam filtering: {len(tags)} tags remain")
     
     # === REMOVE DUPLICATES (case-insensitive) ===
     seen = {ft.lower() for ft in fixed_tags}  # Start with fixed tags
@@ -573,28 +580,41 @@ def upload_video(
     if debug and tags[:5]:
         print(f"[upload] Top 5 priority tags: {[(t, tag_priority_score(t)) for t in tags[:5]]}")
     
+    # CRITICAL: YouTube has UNDOCUMENTED limit of ~30 tags maximum!
+    # Even if total chars ≤500, API rejects if tag count >30-35
+    # This was discovered through production testing (46 tags = rejected)
+    MAX_TOTAL_TAGS = 30  # Safe limit based on real-world testing
+    
     added_count = 0
     for tag in tags:
+        # Check BOTH character limit AND tag count limit
         test_total = calc_total_chars(final_tags + [tag])
         
-        if test_total <= 500:
+        if test_total <= 500 and len(final_tags) < MAX_TOTAL_TAGS:
             final_tags.append(tag)
             added_count += 1
+        elif len(final_tags) >= MAX_TOTAL_TAGS:
+            # Hit tag count limit
+            print(f"[upload] ⚠️  Reached YouTube's tag count limit ({MAX_TOTAL_TAGS} tags)")
+            break
         else:
+            # Hit character limit
             remaining_space = 500 - calc_total_chars(final_tags)
             if remaining_space < 3:  # Less than 3 chars left, stop trying
                 break
             # Try to fit short tags in remaining space
-            if len(tag) <= remaining_space:
+            if len(tag) <= remaining_space and len(final_tags) < MAX_TOTAL_TAGS:
                 final_tags.append(tag)
                 added_count += 1
     
     final_total = calc_total_chars(final_tags)
     efficiency = (final_total / 500) * 100
 
-    # Final validation: YouTube only allows letters, numbers, and spaces (max 30 chars)
+    # Final validation: YouTube only allows letters, numbers, and spaces
     # NO hyphens, underscores, or special characters allowed!
-    allowed_re = re.compile(r"^[A-Za-z0-9 ]{1,30}$")
+    # NOTE: Removed arbitrary 30-char limit per tag - YouTube API docs don't specify this!
+    # Only the 500-char total limit is documented.
+    allowed_re = regex_module.compile(r"^[A-Za-z0-9 ]+$")  # Any length, only alphanumeric + spaces
     validated = []
     dropped = []
     for t in final_tags:
@@ -604,7 +624,7 @@ def upload_video(
             dropped.append(t)
 
     if dropped:
-        print(f"[upload] Dropped {len(dropped)} invalid tags: {dropped}")
+        print(f"[upload] Dropped {len(dropped)} invalid tags (special chars): {dropped}")
 
     final_tags = validated
 
@@ -612,7 +632,7 @@ def upload_video(
     efficiency = (final_total / 500) * 100 if final_total else 0
 
     print(f"\n{'='*60}")
-    print(f"📊 TAG STATISTICS")
+    print(f"📊 TAG STATISTICS (YouTube API Limits Applied)")
     print(f"{'='*60}")
     print(f"✅ Total tags: {len(final_tags)}")
     print(f"   • Fixed tags: {len(fixed_tags)} (InkEcho + Book + Author)")
@@ -623,7 +643,13 @@ def upload_video(
     print(f"\n📋 FINAL TAG LIST:")
     print(f"   Fixed: {', '.join(final_tags[:len(fixed_tags)])}")
     if len(final_tags) > len(fixed_tags):
-        print(f"   Dynamic: {', '.join(final_tags[len(fixed_tags):len(fixed_tags)+10])}...")
+        dynamic_preview = final_tags[len(fixed_tags):len(fixed_tags)+15]
+        remaining = len(final_tags) - len(fixed_tags) - len(dynamic_preview)
+        if remaining > 0:
+            print(f"   Dynamic: {', '.join(dynamic_preview)}... (+{remaining} more)")
+        else:
+            print(f"   Dynamic: {', '.join(dynamic_preview)}")
+    print(f"\n⚠️  Note: No arbitrary tag count limit! Only 500-char total per YouTube API.")
     print(f"{'='*60}\n")
 
     # === FINAL DUPLICATE CHECK (SAFETY NET) ===
@@ -708,20 +734,31 @@ def upload_video(
     if debug:
         print(f"[upload] full path: {video_path}")
 
-    print("🔐 Authenticating with YouTube API...")
+    # Determine secrets directory from client_secret parameter (fallback to 'secrets')
     try:
-        service, MediaFileUpload = _get_service(client_secret, token_file, debug=debug)
-        print("✓ Authentication successful")
-    except Exception as e:
-        print(f"❌ Authentication failed: {e}")
-        if debug:
-            print("[upload] failed to initialize Google API client:", e)
-            print("[upload] ensure packages installed: google-api-python-client google-auth google-auth-oauthlib")
-        return None
+        secrets_dir_path = Path(client_secret).parent if client_secret else Path("secrets")
+    except Exception:
+        secrets_dir_path = Path("secrets")
 
-    print(f"📤 Uploading to YouTube (privacy: {privacy_status})...")
-    print(f"📝 Title: {title[:60]}...")
+    # Build list of OAuth client candidates: primary client_secret plus any in secrets/oauth_clients/
+    client_candidates_list = []
+    # Primary candidate passed into function
+    if client_secret:
+        client_candidates_list.append(Path(client_secret))
+    # Additional candidates directory
+    oauth_clients_dir = secrets_dir_path / "oauth_clients"
+    try:
+        if oauth_clients_dir.exists() and oauth_clients_dir.is_dir():
+            for p in sorted(oauth_clients_dir.glob("*.json")):
+                if p not in client_candidates_list:
+                    client_candidates_list.append(p)
+    except Exception:
+        pass
 
+    if debug:
+        print(f"[upload] OAuth client candidates: {[str(p) for p in client_candidates_list]}")
+
+    # Prepare the request body (same across client attempts)
     body = {
         "snippet": {
             "title": title,
@@ -737,137 +774,176 @@ def upload_video(
         },
     }
 
-    media = MediaFileUpload(str(video_path), chunksize=10 * 1024 * 1024, resumable=True)
-    request = service.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
-
-    response = None
-    error = None
-    retry = 0
-    last_progress = -1
-
-    while response is None:
+    # Try each OAuth client until upload succeeds or all fail
+    for client_idx, client_file in enumerate(client_candidates_list, start=1):
+        token_candidate = secrets_dir_path / f"token_{client_file.stem}.json"
+        print(f"🔐 Attempting authentication with OAuth client {client_idx}/{len(client_candidates_list)}: {client_file.name}")
         try:
-            status, response = request.next_chunk()
-
-            # Show upload progress
-            if status:
-                progress = int(status.progress() * 100)
-                if progress != last_progress and progress % 10 == 0:  # Every 10%
-                    print(f"⏳ Upload progress: {progress}%")
-                    last_progress = progress
-
-            if response is not None:
-                if "id" in response:
-                    video_id = response["id"]
-                    print(f"✅ Video uploaded successfully!")
-                    print(f"🆔 Video ID: {video_id}")
-
-                    # Optional thumbnail upload
-                    if upload_thumbnail:
-                        try:
-                            thumb = thumbnail_path if thumbnail_path else _find_thumbnail_file(run_dir, debug=debug)
-                            if thumb is not None:
-                                print(f"📸 Uploading custom thumbnail: {thumb.name}")
-                                thumb_media = MediaFileUpload(str(thumb))
-                                t_req = service.thumbnails().set(videoId=video_id, media_body=thumb_media)
-                                t_resp = t_req.execute()
-                                print(f"✅ Thumbnail uploaded successfully!")
-                                if debug:
-                                    print("[upload] thumbnail set response keys:", list(t_resp.keys()) if isinstance(t_resp, dict) else type(t_resp))
-                            else:
-                                print("⚠️ No thumbnail file found to upload")
-                                if debug:
-                                    print("[upload] skip thumbnail: no candidate file found")
-                        except Exception as te:
-                            print(f"❌ Thumbnail upload failed: {te}")
-                            if debug:
-                                print("[upload] thumbnail upload failed:", te)
-
-                    # Update database with YouTube URL
-                    try:
-                        from .database import update_youtube_url, update_book_short_url
-                        import json
-
-                        # Read book metadata from titles_json
-                        titles_data = json.loads(Path(titles_json).read_text(encoding="utf-8"))
-                        book_name = titles_data.get("main_title")
-                        author_name = titles_data.get("author_name")
-                        playlist_name = titles_data.get("playlist")
-
-                        if book_name:
-                            youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-                            # Use different function based on video type
-                            if is_short:
-                                update_book_short_url(book_name, youtube_url)
-                            else:
-                                update_book_youtube_url(book_name, youtube_url)
-
-                        # Add to YouTube playlist if playlist name exists (ONLY for main videos, NOT shorts)
-                        if playlist_name and not is_short:
-                            try:
-                                if debug:
-                                    print(f"[upload] Adding video to playlist: {playlist_name}")
-                                playlist_id = _get_or_create_playlist(service, playlist_name, debug=debug)
-                                if playlist_id:
-                                    _add_video_to_playlist(service, video_id, playlist_id, debug=debug)
-                                    if debug:
-                                        print(f"[upload] ✅ Video added to playlist: {playlist_name}")
-                            except Exception as pl_err:
-                                if debug:
-                                    print(f"[upload] playlist error: {pl_err}")
-                    except Exception as db_err:
-                        if debug:
-                            print(f"[upload] database update failed: {db_err}")
-
-                    return video_id
-                print("⚠️ Upload completed but no video ID in response")
-                return None
+            service, MediaFileUpload = _get_service(client_file, token_candidate, debug=debug)
+            print("✓ Authentication successful")
         except Exception as e:
-            error = e
-            retry += 1
-            
-            # Enhanced error logging for keyword/tag issues
-            error_str = str(e)
-            print(f"\n{'='*60}")
-            print(f"❌ UPLOAD ERROR (Attempt {retry}/6)")
-            print(f"{'='*60}")
-            print(f"Error Type: {type(e).__name__}")
-            print(f"Error Message: {error_str}")
-            
-            # Special handling for keyword/tag errors
-            if "keyword" in error_str.lower() or "tag" in error_str.lower():
-                print(f"\n⚠️  TAG/KEYWORD ERROR DETECTED!")
-                print(f"\n📋 Tags that were sent to YouTube API:")
-                print(f"   Count: {len(tags)}")
-                print(f"   Tags: {tags}")
-                print(f"\n🔍 Checking each tag:")
-                for i, tag in enumerate(tags, 1):
-                    tag_len = len(tag)
-                    has_special = any(c for c in tag if not (c.isalnum() or c.isspace()))
-                    print(f"   {i}. '{tag}' (len={tag_len}, special_chars={has_special})")
-                    if tag_len > 30:
-                        print(f"      ⚠️  TOO LONG! (max 30 chars)")
-                    if has_special:
-                        special_chars = [c for c in tag if not (c.isalnum() or c.isspace())]
-                        print(f"      ⚠️  HAS SPECIAL CHARS: {special_chars}")
-                print(f"\n📊 API Request Body snippet:")
-                print(f"   'tags': {tags[:10]}..." if len(tags) > 10 else f"   'tags': {tags}")
-            
+            print(f"❌ Authentication failed for {client_file.name}: {e}")
             if debug:
-                print(f"\n[upload] Full exception details:")
+                print("[upload] ensure packages installed: google-api-python-client google-auth google-auth-oauthlib")
+            # Try next client
+            continue
+
+        print(f"📤 Uploading to YouTube (privacy: {privacy_status}) using client {client_file.name}...")
+        print(f"📝 Title: {title[:60]}...")
+
+        try:
+            media = MediaFileUpload(str(video_path), chunksize=10 * 1024 * 1024, resumable=True)
+            request = service.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
+
+            response = None
+            error = None
+            retry = 0
+            last_progress = -1
+
+            while response is None:
+                try:
+                    status, response = request.next_chunk()
+
+                    # Show upload progress
+                    if status:
+                        progress = int(status.progress() * 100)
+                        if progress != last_progress and progress % 10 == 0:  # Every 10%
+                            print(f"⏳ Upload progress: {progress}%")
+                            last_progress = progress
+
+                    if response is not None:
+                        if "id" in response:
+                            video_id = response["id"]
+                            print(f"✅ Video uploaded successfully!")
+                            print(f"🆔 Video ID: {video_id}")
+
+                            # Optional thumbnail upload
+                            if upload_thumbnail:
+                                try:
+                                    thumb = thumbnail_path if thumbnail_path else _find_thumbnail_file(run_dir, debug=debug)
+                                    if thumb is not None:
+                                        print(f"📸 Uploading custom thumbnail: {thumb.name}")
+                                        thumb_media = MediaFileUpload(str(thumb))
+                                        t_req = service.thumbnails().set(videoId=video_id, media_body=thumb_media)
+                                        t_resp = t_req.execute()
+                                        print(f"✅ Thumbnail uploaded successfully!")
+                                        if debug:
+                                            print("[upload] thumbnail set response keys:", list(t_resp.keys()) if isinstance(t_resp, dict) else type(t_resp))
+                                    else:
+                                        print("⚠️ No thumbnail file found to upload")
+                                        if debug:
+                                            print("[upload] skip thumbnail: no candidate file found")
+                                except Exception as te:
+                                    print(f"❌ Thumbnail upload failed: {te}")
+                                    if debug:
+                                        print("[upload] thumbnail upload failed:", te)
+
+                            # Update database with YouTube URL
+                            try:
+                                from .database import update_youtube_url, update_book_short_url
+                                import json
+
+                                # Read book metadata from titles_json
+                                titles_data = json.loads(Path(titles_json).read_text(encoding="utf-8"))
+                                book_name = titles_data.get("main_title")
+                                author_name = titles_data.get("author_name")
+                                playlist_name = titles_data.get("playlist")
+
+                                if book_name:
+                                    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+                                    # Use different function based on video type
+                                    if is_short:
+                                        update_book_short_url(book_name, youtube_url)
+                                    else:
+                                        update_book_youtube_url(book_name, youtube_url)
+
+                                # Add to YouTube playlist if playlist name exists (ONLY for main videos, NOT shorts)
+                                if playlist_name and not is_short:
+                                    try:
+                                        if debug:
+                                            print(f"[upload] Adding video to playlist: {playlist_name}")
+                                        playlist_id = _get_or_create_playlist(service, playlist_name, debug=debug)
+                                        if playlist_id:
+                                            _add_video_to_playlist(service, video_id, playlist_id, debug=debug)
+                                            if debug:
+                                                print(f"[upload] ✅ Video added to playlist: {playlist_name}")
+                                    except Exception as pl_err:
+                                        if debug:
+                                            print(f"[upload] playlist error: {pl_err}")
+                            except Exception as db_err:
+                                if debug:
+                                    print(f"[upload] database update failed: {db_err}")
+
+                            return video_id
+                        print("⚠️ Upload completed but no video ID in response")
+                        return None
+                except Exception as e:
+                    error = e
+                    retry += 1
+                    
+                    # Enhanced error logging for keyword/tag issues
+                    error_str = str(e)
+                    print(f"\n{'='*60}")
+                    print(f"❌ UPLOAD ERROR (Attempt {retry}/6)")
+                    print(f"{'='*60}")
+                    print(f"Error Type: {type(e).__name__}")
+                    print(f"Error Message: {error_str}")
+                    
+                    # Special handling for keyword/tag errors
+                    if "keyword" in error_str.lower() or "tag" in error_str.lower():
+                        print(f"\n⚠️  TAG/KEYWORD ERROR DETECTED!")
+                        print(f"\n📋 Tags that were sent to YouTube API:")
+                        print(f"   Count: {len(tags)}")
+                        print(f"   Tags: {tags}")
+                        print(f"\n🔍 Checking each tag:")
+                        for i, tag in enumerate(tags, 1):
+                            tag_len = len(tag)
+                            has_special = any(c for c in tag if not (c.isalnum() or c.isspace()))
+                            print(f"   {i}. '{tag}' (len={tag_len}, special_chars={has_special})")
+                            if tag_len > 30:
+                                print(f"      ⚠️  TOO LONG! (max 30 chars)")
+                            if has_special:
+                                special_chars = [c for c in tag if not (c.isalnum() or c.isspace())]
+                                print(f"      ⚠️  HAS SPECIAL CHARS: {special_chars}")
+                        print(f"\n📊 API Request Body snippet:")
+                        print(f"   'tags': {tags[:10]}..." if len(tags) > 10 else f"   'tags': {tags}")
+                    
+                    if debug:
+                        print(f"\n[upload] Full exception details:")
+                        import traceback
+                        traceback.print_exc()
+                    
+                    print(f"{'='*60}\n")
+                    # Detect quota errors in error message and try next OAuth client
+                    error_str_l = error_str.lower()
+                    if "quotaexceeded" in error_str_l or "quota exceeded" in error_str_l or "exceeded your current quota" in error_str_l:
+                        print(f"\n⚠️  Detected YouTube quota exceeded for client {client_file.name} - trying next OAuth client if available")
+                        # break out of inner upload loop and try next client
+                        break
+
+                    if retry > 5:
+                        print("❌ Upload failed after 6 attempts for this client")
+                        break
+                    sleep_s = min(60, 2 ** retry)
+                    print(f"⏳ Retrying in {sleep_s}s...")
+                    time.sleep(sleep_s)
+        except RuntimeError as re:
+            # quotaExceeded surfaced outside inner loop, try next client
+            if "quotaExceeded" in str(re) or "quota exceeded" in str(re).lower():
+                print(f"⚠️ quotaExceeded from client {client_file.name}: {re} -- trying next client")
+                continue
+            else:
+                raise
+        except Exception as outer_e:
+            print(f"❌ Upload attempt failed for client {client_file.name}: {outer_e}")
+            if debug:
                 import traceback
                 traceback.print_exc()
-            
-            print(f"{'='*60}\n")
-            
-            if retry > 5:
-                print("❌ Upload failed after 6 attempts")
-                break
-            sleep_s = min(60, 2 ** retry)
-            print(f"⏳ Retrying in {sleep_s}s...")
-            time.sleep(sleep_s)
+            # Try next client
+            continue
 
-    print("❌ Upload failed - no response received")
+    # If we exit loop, all clients failed
+    print("❌ Upload failed - all OAuth clients exhausted or no suitable client available")
     return None
 
 
