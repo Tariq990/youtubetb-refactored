@@ -1645,11 +1645,17 @@ def generate_thumbnail(
     # Player icons removed for clean, professional design - focus on title and cover only
 
     # Save with MAXIMUM quality (convert back to RGB for JPEG)
+    # YouTube accepts up to 2MB, we use:
+    # - quality=100 (maximum JPEG quality, no compression artifacts)
+    # - subsampling=0 (4:4:4 chroma - best color preservation)
+    # - optimize=False (no additional compression)
+    # - dpi=(300,300) (high resolution for sharp rendering)
     try:
         base = base.convert("RGB")
-        base.save(str(output_path), quality=98, optimize=False, subsampling=0)
+        base.save(str(output_path), format="JPEG", quality=100, optimize=False, subsampling=0, dpi=(300, 300))
         if debug:
-            print("[thumb] saved:", output_path)
+            file_size_kb = output_path.stat().st_size / 1024
+            print(f"[thumb] saved: {output_path} ({file_size_kb:.1f} KB)")
         return output_path
     except Exception as e:
         if debug:
