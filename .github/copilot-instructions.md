@@ -1,28 +1,24 @@
-# YouTubeTB - AI Agent Quick Reference Guide# YouTubeTB - Quick Reference for AI Agent
+# YouTubeTB - AI Agent Quick Reference Guide
 
+## 🎯 What This Does
 
+Automated YouTube book summary video generator: Arabic YouTube → English videos with AI narration.
 
-## 🎯 Project Overview## 🎯 What This Does
+**Tech Stack**: Python 3.13, Gemini AI, FFmpeg, Playwright, YouTube API v3, OpenAI.fm TTS
 
-**Automated YouTube book summary video generator**: Arabic YouTube → English videos with AI narrationAutomated YouTube book summary video generator: Arabic YouTube → English videos with AI narration.
+**Current Version**: v2.2.9 (Quality maximization + elegant shadow design)
 
+## 🆕 Latest Updates (v2.2.9 - Oct 26, 2025)
 
+- ✨ **Thumbnail Quality**: Increased to quality=100, dpi=300 (maximum sharpness)
+- 🎨 **Book Cover Design**: Elegant soft shadow (Netflix/Audible style) - replaced double border
+- 💎 **Main Title Shadow**: Soft 4px shadow with 2px blur for professional depth
+- 🔐 **Encrypted Secrets**: Latest OAuth token (6+ months) + API keys on GitHub
+- 🚀 **Multi-Device Ready**: Use `python scripts\decrypt_secrets.py` to deploy anywhere
 
-**Tech Stack**: Python 3.13, Gemini AI, FFmpeg, Playwright, YouTube API v3, OpenAI.fm TTS## 🚀 Pipeline (11 Stages)
+---
 
-1. **Search** → YouTube API (15-90 min videos)
-
-**Current Version**: v2.2.7 (Gemini AI tag generation + priority fix)2. **Transcribe** → yt-dlp extract Arabic text
-
-3. **Process** → Gemini AI (clean/translate/script)
-
----4. **TTS** → OpenAI.fm audio (Playwright scraping)
-
-5. **Render** → FFmpeg video + subtitles
-
-## 🚀 Complete Pipeline (11 Stages)6. **YouTube Metadata** → AI title/description
-
-7. **Merge** → Combine video+audio
+## 🚀 Pipeline (11 Stages)
 
 | Stage | Adapter | Input | Output | Key Tech |8. **Thumbnail** → PIL 1920x1080 (8 pro colors)
 
@@ -1472,6 +1468,13 @@ python -m src.infrastructure.adapters.process "path/to/run"  # Reprocess text
   - Documentation: `docs/DUPLICATE_CHECK_SYSTEM.md`
   - Config: `config/settings.json` → `youtube_sync`
 
+**Recent Updates (v2.2.9 - 2025-10-26):**
+- Thumbnail quality maximized: quality=100, dpi=300 for sharpest possible output
+- Book cover design: Replaced double border with elegant soft shadow (Netflix/Audible style)
+- Main title shadow: Added soft 4px shadow for depth and professionalism
+- Encrypted secrets: Latest OAuth token (6+ months) and API keys committed to GitHub
+- Ready for multi-device deployment with `decrypt_secrets.py`
+
 ---
 
-**Last Updated**: 2025-10-24 (Added empty folder cleanup fix for duplicate books)
+**Last Updated**: 2025-10-26 (Quality & design improvements + encrypted secrets update)
