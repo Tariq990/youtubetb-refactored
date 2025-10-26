@@ -1,437 +1,871 @@
-# YouTubeTB - Quick Reference for AI Agent
+# YouTubeTB - AI Agent Quick Reference Guide# YouTubeTB - Quick Reference for AI Agent
 
-## 🎯 What This Does
-Automated YouTube book summary video generator: Arabic YouTube → English videos with AI narration.
 
-## 🚀 Pipeline (11 Stages)
+
+## 🎯 Project Overview## 🎯 What This Does
+
+**Automated YouTube book summary video generator**: Arabic YouTube → English videos with AI narrationAutomated YouTube book summary video generator: Arabic YouTube → English videos with AI narration.
+
+
+
+**Tech Stack**: Python 3.13, Gemini AI, FFmpeg, Playwright, YouTube API v3, OpenAI.fm TTS## 🚀 Pipeline (11 Stages)
+
 1. **Search** → YouTube API (15-90 min videos)
-2. **Transcribe** → yt-dlp extract Arabic text
+
+**Current Version**: v2.2.7 (Gemini AI tag generation + priority fix)2. **Transcribe** → yt-dlp extract Arabic text
+
 3. **Process** → Gemini AI (clean/translate/script)
-4. **TTS** → OpenAI.fm audio (Playwright scraping)
+
+---4. **TTS** → OpenAI.fm audio (Playwright scraping)
+
 5. **Render** → FFmpeg video + subtitles
-6. **YouTube Metadata** → AI title/description
+
+## 🚀 Complete Pipeline (11 Stages)6. **YouTube Metadata** → AI title/description
+
 7. **Merge** → Combine video+audio
-8. **Thumbnail** → PIL 1920x1080 (8 pro colors)
-9. **Upload** → YouTube OAuth
-10. **Shorts** → 9:16 vertical 60s video
-11. **Short Upload** → Shorts to YouTube
 
-## 📂 Key Files (Quick Access)
-```
-src/infrastructure/adapters/
-├── search.py          # YouTube search (15-90 min filter)
-├── transcribe.py      # Extract text
-├── process.py         # AI translation (Gemini)
-├── tts.py            # OpenAI.fm TTS (ffprobe only, no Mutagen)
-├── render.py         # Video creation
+| Stage | Adapter | Input | Output | Key Tech |8. **Thumbnail** → PIL 1920x1080 (8 pro colors)
+
+|-------|---------|-------|--------|----------|9. **Upload** → YouTube OAuth
+
+| 1. Search | `search.py` | Book name (AR/EN) | YouTube video URL | YouTube Data API |10. **Shorts** → 9:16 vertical 60s video
+
+| 2. Transcribe | `transcribe.py` | Video URL | `transcribe.txt` (Arabic) | yt-dlp + cookies |11. **Short Upload** → Shorts to YouTube
+
+| 3. Process | `process.py` | Arabic text | EN script + cover | Gemini AI (3 calls) |
+
+| 4. TTS | `tts.py` | Script | `narration.mp3` | OpenAI.fm (Playwright) |## 📂 Key Files (Quick Access)
+
+| 5. Render | `render.py` | Cover + timestamps | `video_snap.mp4` | FFmpeg + subtitles |```
+
+| 6. Metadata | `youtube_metadata.py` | Script | Title/desc/**tags** | **Gemini AI tags** |src/infrastructure/adapters/
+
+| 7. Merge | `merge_av.py` | Video + audio | Final MP4 | FFmpeg copy codec |├── search.py          # YouTube search (15-90 min filter)
+
+| 8. Thumbnail | `thumbnail.py` | Metadata + cover | `thumbnail.jpg` | PIL + 8 colors |├── transcribe.py      # Extract text
+
+| 9. Upload | `youtube_upload.py` | MP4 + metadata | YouTube video ID | OAuth 2.0 |├── process.py         # AI translation (Gemini)
+
+| 10. Shorts | `shorts_generator.py` | Script + clips | `short_final.mp4` | Pexels API + captions |├── tts.py            # OpenAI.fm TTS (ffprobe only, no Mutagen)
+
+| 11. Short Upload | `youtube_upload.py` | Short MP4 | Shorts video ID | YouTube Shorts API |├── render.py         # Video creation
+
 ├── youtube_metadata.py # SEO title/description
-├── merge_av.py       # Final MP4
+
+---├── merge_av.py       # Final MP4
+
 ├── thumbnail.py      # 8-color smart palette
-├── youtube_upload.py # OAuth upload
+
+## 📂 Critical File Structure├── youtube_upload.py # OAuth upload
+
 ├── shorts_generator.py # Vertical shorts
-└── database.py       # Duplicate detection + YouTube sync
 
-src/presentation/cli/
-└── run_pipeline.py   # Main orchestrator (duplicate check FIRST)
-```
+```└── database.py       # Duplicate detection + YouTube sync
 
-## ⚡ Critical Code Patterns
+youtubetb_refactored/
 
-### repo_root Calculation
-```python
-# ALWAYS use correct depth:
-repo_root = Path(__file__).resolve().parents[3]  # For run_pipeline.py
-repo_root = Path(__file__).resolve().parents[2]  # For adapters/
-```
+├── main.py                    # Entry point → run_menu.pysrc/presentation/cli/
 
-### Duplicate Detection (FIXED v2.2.2)
-```python
-# CORRECT ORDER (check BEFORE add):
-existing = check_book_exists(book_name, author_name)
-if existing and status == 'uploaded':
-    shutil.rmtree(d["root"])  # Delete empty folder
-    return  # Stop
-if not existing:
-    add_book(...)  # Only add if NEW
-```
+├── books.txt                  # Batch input (one book per line)└── run_pipeline.py   # Main orchestrator (duplicate check FIRST)
 
-### Database NoneType Protection (FIXED v2.2.1)
-```python
-# ALWAYS check None before .strip():
-db_title = book.get("main_title")
-if not db_title:
-    continue
-title_match = str(db_title).strip().lower() == book_lower
-```
+├── database.json              # Processed books tracking + YouTube sync```
 
-### TTS Duration (FIXED v2.2.3)
-```python
-# Use ffprobe ONLY (no Mutagen):
-result = subprocess.run(["ffprobe", "-v", "error", ...])
-duration = float(result.stdout.strip())
-# Silent success - no spam logs
-```
+│
 
-### Thumbnail Subtitle Colors (FIXED v2.2.4)
-```python
-PROFESSIONAL_SUBTITLE_COLORS = [
-    (255, 215, 0),    # Gold
-    (255, 140, 0),    # Dark Orange
-    (255, 69, 0),     # Red-Orange
+├── config/## ⚡ Critical Code Patterns
+
+│   ├── prompts.json          # Gemini prompts (clean/translate/script)
+
+│   ├── settings.json         # Model, fonts, YouTube sync config### repo_root Calculation
+
+│   └── template.html         # YouTube description template```python
+
+│# ALWAYS use correct depth:
+
+├── secrets/                   # .gitignore - NEVER commit!repo_root = Path(__file__).resolve().parents[3]  # For run_pipeline.py
+
+│   ├── api_key.txt           # Gemini API key (multi-line fallback)repo_root = Path(__file__).resolve().parents[2]  # For adapters/
+
+│   ├── api_keys.txt          # YouTube Data API keys```
+
+│   ├── client_secret.json    # OAuth credentials
+
+│   ├── token.json            # OAuth token (auto-refresh)### Duplicate Detection (FIXED v2.2.2)
+
+│   └── cookies.txt           # YouTube cookies (age-restricted videos)```python
+
+│# CORRECT ORDER (check BEFORE add):
+
+├── runs/                      # Generated per bookexisting = check_book_exists(book_name, author_name)
+
+│   └── YYYY-MM-DD_HH-MM-SS_Book-Name/if existing and status == 'uploaded':
+
+│       ├── summary.json       # Pipeline state (resume logic)    shutil.rmtree(d["root"])  # Delete empty folder
+
+│       ├── transcribe.txt     # Arabic source    return  # Stop
+
+│       ├── cleaned.txt        # AI cleanedif not existing:
+
+│       ├── translated.txt     # English translation    add_book(...)  # Only add if NEW
+
+│       ├── script.txt         # Narration script```
+
+│       ├── narration.mp3      # TTS audio
+
+│       ├── video_snap.mp4     # Silent video### Database NoneType Protection (FIXED v2.2.1)
+
+│       ├── output.titles.json # **YouTube metadata + TAGS**```python
+
+│       ├── thumbnail.jpg      # 1920x1080 thumbnail# ALWAYS check None before .strip():
+
+│       ├── bookcover.jpg      # From Google Books/Amazondb_title = book.get("main_title")
+
+│       ├── [YouTube Title].mp4 # Final uploadif not db_title:
+
+│       ├── short_script.txt   # 60s script    continue
+
+│       ├── short_narration.mp3 # Shorts audiotitle_match = str(db_title).strip().lower() == book_lower
+
+│       ├── short_final.mp4    # Vertical short```
+
+│       └── pipeline.log       # Full logs
+
+│### TTS Duration (FIXED v2.2.3)
+
+└── src/infrastructure/adapters/```python
+
+    ├── search.py              # 15-90 min filter# Use ffprobe ONLY (no Mutagen):
+
+    ├── transcribe.py          # yt-dlp extractionresult = subprocess.run(["ffprobe", "-v", "error", ...])
+
+    ├── process.py             # 3 Gemini calls + book coverduration = float(result.stdout.strip())
+
+    ├── tts.py                 # OpenAI.fm TTS (ffprobe only)# Silent success - no spam logs
+
+    ├── render.py              # FFmpeg video composition```
+
+    ├── youtube_metadata.py    # **GEMINI AI TAG GENERATION** ⭐
+
+    ├── merge_av.py            # Final video merge### Thumbnail Subtitle Colors (FIXED v2.2.4)
+
+    ├── thumbnail.py           # 8-color professional palette```python
+
+    ├── youtube_upload.py      # OAuth upload (26-char tag limit)PROFESSIONAL_SUBTITLE_COLORS = [
+
+    ├── shorts_generator.py    # Pexels videos + captions    (255, 215, 0),    # Gold
+
+    └── database.py            # Duplicate detection + YouTube sync    (255, 140, 0),    # Dark Orange
+
+```    (255, 69, 0),     # Red-Orange
+
     (50, 205, 50),    # Lime Green
-    (0, 191, 255),    # Deep Sky Blue
-    (147, 112, 219),  # Medium Purple
-    (255, 20, 147),   # Deep Pink
-    (255, 255, 100),  # Bright Yellow
-]
-# Pick best contrast with background automatically
-```
 
-## 🔧 Common Commands
-```bash
-# Run pipeline
+---    (0, 191, 255),    # Deep Sky Blue
+
+    (147, 112, 219),  # Medium Purple
+
+## ⚡ Critical Code Patterns    (255, 20, 147),   # Deep Pink
+
+    (255, 255, 100),  # Bright Yellow
+
+### 1. repo_root Calculation (CRITICAL!)]
+
+```python# Pick best contrast with background automatically
+
+# ALWAYS use correct depth based on file location:```
+
+
+
+# For adapters/ (search.py, process.py, etc.)## 🔧 Common Commands
+
+repo_root = Path(__file__).resolve().parents[2]```bash
+
+# Example: src/infrastructure/adapters/search.py → parents[2] → repo root# Run pipeline
+
 python main.py  # Interactive menu
 
-# Batch processing
-python main.py  # Option 2 (books.txt with 20+ books)
+# For run_pipeline.py
 
-# Resume failed run
-python main.py  # Option 13
+repo_root = Path(__file__).resolve().parents[3]# Batch processing
 
-# Test individual stage
-python -m src.infrastructure.adapters.search "العادات الذرية"
-python -m src.infrastructure.adapters.thumbnail --run "runs/latest" --debug
+# Example: src/presentation/cli/run_pipeline.py → parents[3] → repo rootpython main.py  # Option 2 (books.txt with 20+ books)
 
-# Database sync from YouTube
-python -c "from src.infrastructure.adapters.database import sync_database_from_youtube; sync_database_from_youtube()"
-```
 
-## 🐛 Recent Fixes (v2.2.x)
 
-### v2.2.6 (2025-10-24)
-- **YouTube tags**: Fixed "invalid video keywords" error
-- **Tag cleanup**: Removed long tags that exceed 30-char limit when truncated
+# Common mistake: Using wrong depth breaks secrets/ path resolution!# Resume failed run
 
-### v2.2.4 (2025-10-24)
-- **Thumbnail colors**: 8 professional colors with auto-contrast selection
-- **TTS logs**: Removed Mutagen spam (use ffprobe only)
+```python main.py  # Option 13
 
-### v2.2.3 (2025-10-24)
-- **TTS performance**: Removed Mutagen completely (ffprobe direct)
-- **Silent operation**: No more "⚠️ Mutagen failed" warnings
 
-### v2.2.2 (2025-10-24)
-- **Empty folders**: Auto-delete when duplicate detected
-- **Duplicate check**: Reversed order (check BEFORE add)
-- **Clean runs/**: No empty timestamp folders
 
-### v2.2.1 (2025-10-24)
-- **Database NoneType**: Fixed 7 functions with defensive None checks
-- **Graceful handling**: Skip None entries instead of crash
+### 2. YouTube Tag Generation (NEW v2.2.6-7) ⭐# Test individual stage
 
-## 📋 books.txt Format
-```
-العادات الذرية
-الأب الغني والأب الفقير
+```pythonpython -m src.infrastructure.adapters.search "العادات الذرية"
+
+# Gemini AI generates ALL tags with SEO optimizationpython -m src.infrastructure.adapters.thumbnail --run "runs/latest" --debug
+
+def _generate_ai_tags(model, book_title, author_name, prompts, target_count=60):
+
+    """# Database sync from YouTube
+
+    Gemini AI generates optimized YouTube tags:python -c "from src.infrastructure.adapters.database import sync_database_from_youtube; sync_database_from_youtube()"
+
+    - 25-30 tags total```
+
+    - Each tag ≤26 chars (YouTube's ACTUAL limit, not 30!)
+
+    - Target 450-495 raw chars## 🐛 Recent Fixes (v2.2.x)
+
+    - Mix: book/author (7), SEO keywords (12), topic tags (10)
+
+    - Prefer spaced tags (80%+) for better SEO### v2.2.6 (2025-10-24)
+
+    - Auto-enforces API limit (499 chars)- **YouTube tags**: Fixed "invalid video keywords" error
+
+    """- **Tag cleanup**: Removed long tags that exceed 30-char limit when truncated
+
+    prompt = f"""You are a YouTube SEO expert...
+
+    Book: {book_title}### v2.2.4 (2025-10-24)
+
+    Author: {author_name}- **Thumbnail colors**: 8 professional colors with auto-contrast selection
+
+    - **TTS logs**: Removed Mutagen spam (use ffprobe only)
+
+    Generate EXACTLY 25-30 tags, each ≤26 chars...
+
+    Return JSON array: ["tag1", "tag2", ...]### v2.2.3 (2025-10-24)
+
+    """- **TTS performance**: Removed Mutagen completely (ffprobe direct)
+
+    - **Silent operation**: No more "⚠️ Mutagen failed" warnings
+
+    # Call Gemini
+
+    resp = model.generate_content(prompt)### v2.2.2 (2025-10-24)
+
+    tags = json.loads(resp.text)  # Parse JSON response- **Empty folders**: Auto-delete when duplicate detected
+
+    - **Duplicate check**: Reversed order (check BEFORE add)
+
+    # Enforce API limit (raw_chars + 2×spaced_tags ≤ 495)- **Clean runs/**: No empty timestamp folders
+
+    final_tags = []
+
+    api_chars = 0### v2.2.1 (2025-10-24)
+
+    for tag in tags:- **Database NoneType**: Fixed 7 functions with defensive None checks
+
+        tag_cost = len(tag) + (2 if " " in tag else 0)- **Graceful handling**: Skip None entries instead of crash
+
+        if api_chars + tag_cost <= 495:
+
+            final_tags.append(tag)## 📋 books.txt Format
+
+            api_chars += tag_cost```
+
+    العادات الذرية
+
+    return final_tags  # ~29 tags, 441 raw chars, 489 API charsالأب الغني والأب الفقير
+
 فن اللامبالاة
-...
-```
-- One book per line
-- Arabic or English
-- 20 books currently (mixed categories)
 
-## 🗂️ File Structure
-```
-runs/YYYY-MM-DD_HH-MM-SS_Book-Name/
-├── summary.json         # Pipeline state
-├── transcribe.txt       # Arabic source
+# Tag Priority System (FIXED v2.2.7):...
+
+def _merge_tags(primary, ai, density, book_title, author_name):```
+
+    # Register tags by priority (LOWER = HIGHER):- One book per line
+
+    register(must_have, priority=0)    # InkEcho, book summary, audiobook- Arabic or English
+
+    register(ai, priority=1)           # 🌟 AI TAGS HIGHEST (was 3)- 20 books currently (mixed categories)
+
+    register(density, priority=2)      # Compressed tags
+
+    register(primary, priority=3)      # Old basic tags (was 1) - fallback only## 🗂️ File Structure
+
+    register(FALLBACK_DENSE_TAGS, priority=4)```
+
+    runs/YYYY-MM-DD_HH-MM-SS_Book-Name/
+
+    # Result: AI tags override old manual tags ✅├── summary.json         # Pipeline state
+
+```├── transcribe.txt       # Arabic source
+
 ├── cleaned.txt          # AI cleaned
-├── translated.txt       # English
-├── script.txt           # Narration script
-├── narration.mp3        # Final audio
-├── video_snap.mp4       # Silent video
+
+### 3. YouTube Upload Tag Limit (FIXED v2.2.6)├── translated.txt       # English
+
+```python├── script.txt           # Narration script
+
+# youtube_upload.py - _sanitize_tag_for_api()├── narration.mp3        # Final audio
+
+# CRITICAL: YouTube's REAL limit is 26 chars, NOT 30!├── video_snap.mp4       # Silent video
+
 ├── output.titles.json   # YouTube metadata
-├── thumbnail.jpg        # 1920x1080
-├── bookcover.jpg        # From Google Books/Amazon
-├── [YouTube Title].mp4  # Final upload
-├── short_video.mp4      # Vertical short
-└── pipeline.log         # Full logs
+
+if len(s) > 26:  # Changed from 30├── thumbnail.jpg        # 1920x1080
+
+    s = s[:26].rstrip()├── bookcover.jpg        # From Google Books/Amazon
+
+    ├── [YouTube Title].mp4  # Final upload
+
+# Discovered via empirical testing:├── short_video.mp4      # Vertical short
+
+# - Tags ≤26 chars → ✅ SUCCESS└── pipeline.log         # Full logs
+
+# - Tags 27-30 chars → ❌ "invalid video keywords" error```
+
 ```
 
 ## 🔑 Secrets Structure
-```
-secrets/
-├── api_key.txt          # Gemini API
-├── api_keys.txt         # YouTube Data API
-├── client_secret.json   # OAuth credentials
-├── token.json           # OAuth token (auto-refresh)
-└── cookies.txt          # YouTube cookies (age-restricted)
-```
 
-## 🎨 Config Files
-```
-config/
-├── prompts.json         # AI prompts (clean/translate/script)
+### 4. Duplicate Detection (FIXED v2.2.2)```
+
+```pythonsecrets/
+
+# CORRECT ORDER (check BEFORE add to database):├── api_key.txt          # Gemini API
+
+existing = check_book_exists(book_name, author_name)├── api_keys.txt         # YouTube Data API
+
+if existing and existing.get("status") == "uploaded":├── client_secret.json   # OAuth credentials
+
+    shutil.rmtree(run_dir)  # Delete empty folder├── token.json           # OAuth token (auto-refresh)
+
+    print(f"✓ Book already uploaded: {existing['youtube_url']}")└── cookies.txt          # YouTube cookies (age-restricted)
+
+    return  # Stop pipeline```
+
+
+
+# Only add if NEW book## 🎨 Config Files
+
+if not existing:```
+
+    add_book(book_name, author_name, status="processing", ...)config/
+
+```├── prompts.json         # AI prompts (clean/translate/script)
+
 ├── settings.json        # Model, fonts, YouTube sync
-└── template.html        # Metadata template
+
+### 5. Database NoneType Protection (FIXED v2.2.1)└── template.html        # Metadata template
+
+```python```
+
+# ALWAYS check None before .strip() or string operations:
+
+db_title = book.get("main_title")### settings.json Quick Ref
+
+if not db_title:  # Skip None entries```json
+
+    continue{
+
+      "gemini_model": "gemini-2.5-flash-latest",
+
+title_match = str(db_title).strip().lower() == book_lower  "thumbnail_font": "Bebas Neue",
+
+```  "youtube_sync": {
+
+    "enabled": true,
+
+---    "channel_id": "UCQyOYMG7mH7kwM5O5kMF6tQ"
+
+  }
+
+## 🔧 Stage-by-Stage Deep Dive}
+
 ```
 
-### settings.json Quick Ref
-```json
-{
-  "gemini_model": "gemini-2.5-flash-latest",
-  "thumbnail_font": "Bebas Neue",
-  "youtube_sync": {
-    "enabled": true,
-    "channel_id": "UCQyOYMG7mH7kwM5O5kMF6tQ"
-  }
-}
-```
+### Stage 6: YouTube Metadata (`youtube_metadata.py`) ⭐ CRITICAL!
 
 ## ⚠️ Known Issues
-1. **Long videos (>90 min)**: Gemini truncates → Use filter in search.py
+
+**Tag Generation System** (v2.2.6-7):1. **Long videos (>90 min)**: Gemini truncates → Use filter in search.py
+
 2. **Cookies required**: Age-restricted videos need `cookies.txt`
-3. **ffprobe required**: Critical for TTS timestamps
-4. **Playwright setup**: Run `playwright install chromium`
 
-## 🧪 Testing
-```bash
-# Database tests
-python scripts\test_db_none_fix.py
-python scripts\test_duplicate_folder_cleanup.py
+```python3. **ffprobe required**: Critical for TTS timestamps
 
-# Font profiles
-python test_font_profiles.py
+# Main function orchestrates tag generation:4. **Playwright setup**: Run `playwright install chromium`
 
-# YouTube sync
-python scripts/test_sync.py
-```
+def main(titles_json_path, config_dir=None):
 
-## 📊 Database Schema
-```json
-{
-  "books": [
-    {
-      "main_title": "Book Name",
-      "author_name": "Author",
-      "status": "processing|uploaded|done",
-      "youtube_url": "https://youtube.com/watch?v=...",
-      "youtube_short_url": "https://youtube.com/watch?v=...",
+    # ... load metadata ...## 🧪 Testing
+
+    ```bash
+
+    # OLD System (still exists but deprioritized):# Database tests
+
+    basic_tags = _generate_tags(book_title, author_name)  # 21 tagspython scripts\test_db_none_fix.py
+
+    density_tags = _build_density_tags(book_title, author_name)  # 10 compressedpython scripts\test_duplicate_folder_cleanup.py
+
+    
+
+    # NEW System (PRIMARY):# Font profiles
+
+    ai_tags = _generate_ai_tags(model, book_title, author_name, prompts, target_count=60)python test_font_profiles.py
+
+    # Returns: 25-30 content-aware tags
+
+    # Example: "habit stacking", "1 percent better", "four laws of behavior"# YouTube sync
+
+    python scripts/test_sync.py
+
+    # Merge with correct priority:```
+
+    tags, raw_chars, api_chars = _merge_tags(
+
+        primary=basic_tags,      # Priority 3 (low - fallback)## 📊 Database Schema
+
+        ai=ai_tags,              # Priority 1 (HIGH) ⭐```json
+
+        density=density_tags,    # Priority 2 (medium){
+
+        book_title=book_title,  "books": [
+
+        author_name=author_name    {
+
+    )      "main_title": "Book Name",
+
+          "author_name": "Author",
+
+    # Save to output.titles.json:      "status": "processing|uploaded|done",
+
+    metadata["tags"] = tags  # ~29 tags, ≤26 chars each      "youtube_url": "https://youtube.com/watch?v=...",
+
+```      "youtube_short_url": "https://youtube.com/watch?v=...",
+
       "run_folder": "2025-10-24_XX-XX-XX_Book-Name",
-      "date_added": "2025-10-24T18:00:00"
+
+**AI Tag Generation Details**:      "date_added": "2025-10-24T18:00:00"
+
     }
-  ]
-}
-```
 
-## 🎯 AI Agent Guidelines
+```python  ]
 
-### When User Reports Error
-1. **Check latest logs**: `runs/latest/pipeline.log`
-2. **Check summary.json**: See which stage failed
-3. **Run stage standalone**: `python -m src.infrastructure.adapters.STAGE`
-4. **Check database.json**: For duplicate/NoneType issues
+def _generate_ai_tags(model, book_title, author_name, prompts, target_count=60):}
 
-### When User Wants New Feature
-1. **Identify stage**: Which adapter needs modification?
-2. **Check existing patterns**: Follow defensive coding (None checks)
-3. **Test standalone**: Run adapter's `main()` before integration
-4. **Update this file**: Add to Recent Fixes section
+    """```
 
-### When User Asks "Why?"
-1. **Search this file first**: Use Ctrl+F
-2. **Check Recent Fixes**: Likely documented
-3. **Read code comments**: Adapters have inline docs
-4. **Check docs/**: Detailed documentation exists
+    Gemini generates tags optimized for YouTube SEO
 
----
+    ## 🎯 AI Agent Guidelines
 
-**Last Updated**: 2025-10-24 (Optimized for AI agent speed)
-  - `process.py`: `parents[2]` (src/infrastructure/adapters → root)
-  - `run_pipeline.py`: `parents[3]` (src/presentation/cli → root)
-- **Secrets**: Prioritize `secrets/` folder over root (e.g., `secrets/api_key.txt` > `api_key.txt`)
-- **Cookies**: Search order: `secrets/cookies.txt` → `cookies.txt` (required for age-restricted videos)
+    Prompt includes:
 
-## Core Components
+    - EXACTLY 25-30 tags### When User Reports Error
 
-### 1. Search (`search.py`)
+    - Each MUST be ≤26 characters (STRICT)1. **Check latest logs**: `runs/latest/pipeline.log`
+
+    - Target 450-495 total raw chars2. **Check summary.json**: See which stage failed
+
+    - Mix of:3. **Run stage standalone**: `python -m src.infrastructure.adapters.STAGE`
+
+      * Book/Author combos (5-7): "Atomic Habits", "James Clear", "Atomic Habits James Clear"4. **Check database.json**: For duplicate/NoneType issues
+
+      * SEO keywords (10-12): "self improvement", "personal development", "productivity"
+
+      * Topic-specific (8-10): "habit stacking", "1 percent better", "identity based habits"### When User Wants New Feature
+
+    - Prefer spaced tags over compressed (80%+ for SEO)1. **Identify stage**: Which adapter needs modification?
+
+    - Return JSON array format2. **Check existing patterns**: Follow defensive coding (None checks)
+
+    3. **Test standalone**: Run adapter's `main()` before integration
+
+    Returns:4. **Update this file**: Add to Recent Fixes section
+
+        List of sanitized tags with API limit enforcement
+
+    """### When User Asks "Why?"
+
+    1. **Search this file first**: Use Ctrl+F
+
+    # Example output for "Atomic Habits":2. **Check Recent Fixes**: Likely documented
+
+    [3. **Read code comments**: Adapters have inline docs
+
+        "Atomic Habits",              # 13 chars4. **Check docs/**: Detailed documentation exists
+
+        "James Clear",                # 11 chars
+
+        "Atomic Habits book summary", # 26 chars---
+
+        "habit stacking",             # 14 chars
+
+        "1 percent better",           # 16 chars**Last Updated**: 2025-10-24 (Optimized for AI agent speed)
+
+        "four laws of behavior",      # 21 chars  - `process.py`: `parents[2]` (src/infrastructure/adapters → root)
+
+        "identity based habits",      # 21 chars  - `run_pipeline.py`: `parents[3]` (src/presentation/cli → root)
+
+        # ... 22 more tags- **Secrets**: Prioritize `secrets/` folder over root (e.g., `secrets/api_key.txt` > `api_key.txt`)
+
+    ]- **Cookies**: Search order: `secrets/cookies.txt` → `cookies.txt` (required for age-restricted videos)
+
+    # Total: 29 tags, 441 raw chars, 489 API chars (80%+ spaced)
+
+```## Core Components
+
+
+
+**Tag Priority Merge**:### 1. Search (`search.py`)
+
 **Purpose**: Find optimal book summary videos on YouTube.
 
-**Filters** (Lines 194-199):
 ```python
-if total_seconds < 900 or total_seconds > 5400:  # 15-90 min
-    excluded_count += 1
-    continue
-```
-- Excludes: <15 min (too short), >90 min (causes Gemini truncation)
-- **Why 90 min max**: Longer videos → 18k+ words → Gemini output limits → severe content loss
 
-**Dual-Phase Search**:
-1. Relevance-based (15 results) - popular videos
-2. Date-based (10 results) - recent uploads
-3. Sorts by duration (longest first) after filtering
+def _merge_tags(primary, ai, density, book_title, author_name):**Filters** (Lines 194-199):
 
-### 2. Process (`process.py`) - THE BOTTLENECK
-**Three Gemini Calls**:
-1. `_clean_source_text()` - Remove intro/outro, keep book content only
-2. `_translate_to_english()` - Arabic → English (preserves ALL details)
-3. `_scriptify_youtube()` - Reformat for YouTube narration
+    """```python
 
-**Model**: `gemini-2.5-flash-latest` (configurable via `config/settings.json` → `gemini_model`)
+    Deduplicates and prioritizes tagsif total_seconds < 900 or total_seconds > 5400:  # 15-90 min
 
-**Critical Issue**: No text chunking! Large transcripts (18k words) exceed output limits.
+        excluded_count += 1
+
+    Priority levels (lower = higher priority):    continue
+
+    0. must_have: InkEcho, book summary, audiobook (always included)```
+
+    1. AI tags: Content-aware Gemini tags (HIGHEST - v2.2.7 fix)- Excludes: <15 min (too short), >90 min (causes Gemini truncation)
+
+    2. density: Compressed tags without spaces- **Why 90 min max**: Longer videos → 18k+ words → Gemini output limits → severe content loss
+
+    3. basic/primary: Old manual tags (FALLBACK only)
+
+    4. FALLBACK_DENSE_TAGS: Last resort**Dual-Phase Search**:
+
+    1. Relevance-based (15 results) - popular videos
+
+    Deduplication: Uses casefold() keys2. Date-based (10 results) - recent uploads
+
+    API limit: Stops at 495 chars (leaves 4-char buffer)3. Sorts by duration (longest first) after filtering
+
+    Max tags: 30 (YouTube limit)
+
+    """### 2. Process (`process.py`) - THE BOTTLENECK
+
+    **Three Gemini Calls**:
+
+    # Example priority resolution:1. `_clean_source_text()` - Remove intro/outro, keep book content only
+
+    # AI tag: "habit stacking" (priority 1)2. `_translate_to_english()` - Arabic → English (preserves ALL details)
+
+    # Manual tag: "James Clear business strategy" (priority 3)3. `_scriptify_youtube()` - Reformat for YouTube narration
+
+    # → AI tag wins ✅
+
+```**Model**: `gemini-2.5-flash-latest` (configurable via `config/settings.json` → `gemini_model`)
+
+
+
+**Why This Matters**:**Critical Issue**: No text chunking! Large transcripts (18k words) exceed output limits.
+
 - Result: Gemini auto-summarizes despite "DO NOT SUMMARIZE" prompt
-- Example: 18,981 word input → 2,046 word translation (89% loss!)
 
-**Book Cover Fetching** (`_get_book_cover_from_amazon`, Line 220):
-- **Primary Method**: Google Books API (fast, reliable, no scraping)
-- **Fallback Methods**: Amazon.com scraping (English titles only) with Playwright, then requests
-- **Why Google Books First**: Much faster than browser automation, reliable API
-- **Amazon Scoring Algorithm** (if used):
-  ```python
+1. **Content-Aware Tags**: AI understands book content- Example: 18,981 word input → 2,046 word translation (89% loss!)
+
+   - "habit stacking" (from Atomic Habits chapter)
+
+   - "1 percent better" (book's main concept)**Book Cover Fetching** (`_get_book_cover_from_amazon`, Line 220):
+
+   - "four laws of behavior" (book framework)- **Primary Method**: Google Books API (fast, reliable, no scraping)
+
+   - **Fallback Methods**: Amazon.com scraping (English titles only) with Playwright, then requests
+
+2. **Better SEO**: 80%+ spaced tags- **Why Google Books First**: Much faster than browser automation, reliable API
+
+   - "self improvement" >> "selfimprovement"- **Amazon Scoring Algorithm** (if used):
+
+   - Natural language matches search queries  ```python
+
   position_score = (5 - idx) * 10  # First result = 50 points
-  rating_score = rating * 10        # 4.7 stars = 47 points
-  review_score = min(reviews/100, 10)  # Capped at 10
-  total = position + rating + review
+
+3. **API Compliance**: Respects YouTube's REAL limits  rating_score = rating * 10        # 4.7 stars = 47 points
+
+   - 26 chars per tag (not 30!)  review_score = min(reviews/100, 10)  # Capped at 10
+
+   - 499 API chars total (raw + 2×spaced)  total = position + rating + review
+
   ```
-- **Old Methods Removed**: `_get_cover_goodreads`, `_get_cover_openlibrary`, `_get_cover_googlebooks` (replaced with API)
 
-### 3. TTS (`tts.py`)
+4. **Automatic**: No manual tag maintenance needed- **Old Methods Removed**: `_get_cover_goodreads`, `_get_cover_openlibrary`, `_get_cover_googlebooks` (replaced with API)
+
+
+
+---### 3. TTS (`tts.py`)
+
 **Service**: OpenAI.fm (free TTS via Playwright scraping)
-- Chunks text into ≤950 char segments (CSV-based)
-- Voice: "Shimmer" (hardcoded, configurable via `DEFAULT_VOICE`)
-- Retries: 10 attempts per chunk with exponential backoff
-- **Script cleaning** (`_clean_script_markers`, Line 55): Removes prompt structure markers like `**[HOOK]**`, `**[CONTEXT]**` before TTS
-- **Legacy**: Mutagen timestamp extraction often fails → falls back to `ffprobe`
-- **Whisper alignment**: Optional word-level timestamps via `whisper` (if installed)
 
-### 4. Render (`render.py`)
-**FFmpeg Pipeline**:
-1. Parse `timestamps.json` (Whisper word-level alignment)
-2. Create timed subtitle overlays (`drawtext` filters)
-3. Composite: background gradient + book cover + animated text
-4. Output: 1920x1080, 30fps, CRF 23
+## 🎯 Common Workflows- Chunks text into ≤950 char segments (CSV-based)
+
+- Voice: "Shimmer" (hardcoded, configurable via `DEFAULT_VOICE`)
+
+### Test Tag Generation- Retries: 10 attempts per chunk with exponential backoff
+
+```bash- **Script cleaning** (`_clean_script_markers`, Line 55): Removes prompt structure markers like `**[HOOK]**`, `**[CONTEXT]**` before TTS
+
+# Test integrated system:- **Legacy**: Mutagen timestamp extraction often fails → falls back to `ffprobe`
+
+python scripts/test_integrated_tags.py- **Whisper alignment**: Optional word-level timestamps via `whisper` (if installed)
+
+
+
+# Expected output:### 4. Render (`render.py`)
+
+# ✅ 29 tags**FFmpeg Pipeline**:
+
+# ✅ 441 raw chars (target: 450-495)1. Parse `timestamps.json` (Whisper word-level alignment)
+
+# ✅ 489 API chars (limit: 499)2. Create timed subtitle overlays (`drawtext` filters)
+
+# ✅ All tags ≤26 chars3. Composite: background gradient + book cover + animated text
+
+# ✅ 80%+ spaced tags4. Output: 1920x1080, 30fps, CRF 23
+
+```
 
 **Key Files**:
-- `config/template.html` - Not used in render, only for metadata
-- `assets/fonts/` - Custom fonts for text rendering
 
-### 5. YouTube Metadata (`youtube_metadata.py`)
+### Debug Tag Issues- `config/template.html` - Not used in render, only for metadata
+
+```bash- `assets/fonts/` - Custom fonts for text rendering
+
+# Check generated tags:
+
+cat runs/latest/output.titles.json | python -m json.tool### 5. YouTube Metadata (`youtube_metadata.py`)
+
 **Purpose**: Generate SEO-optimized YouTube video metadata using Gemini AI.
 
-**What it generates**:
+# Verify tag lengths:
+
+python -c "import json; tags=json.load(open('runs/latest/output.titles.json'))['tags']; print([(t, len(t)) for t in tags])"**What it generates**:
+
 - **YouTube Title**: Catchy, clickable title (max 100 chars)
-  - Pattern: `"[Hook] – [Book Name] | Book Summary"`
-  - Example: `"Master Your Mind – Atomic Habits | Book Summary"`
-- **YouTube Description**: Full description with timestamps, chapters, links
+
+# Check API chars:  - Pattern: `"[Hook] – [Book Name] | Book Summary"`
+
+python -c "import json; tags=json.load(open('runs/latest/output.titles.json'))['tags']; print(sum(len(t) + (2 if ' ' in t else 0) for t in tags))"  - Example: `"Master Your Mind – Atomic Habits | Book Summary"`
+
+```- **YouTube Description**: Full description with timestamps, chapters, links
+
   - Includes: Book intro, key concepts, author info, timestamps
-  - Adds: Channel link, playlist links, call-to-action
+
+---  - Adds: Channel link, playlist links, call-to-action
+
 - **Thumbnail Hooks**: Short punchy text for thumbnail overlay
-  - `thumbnail_title`: Main hook (5-6 words max)
+
+## 🐛 Known Issues & Fixes  - `thumbnail_title`: Main hook (5-6 words max)
+
   - `thumbnail_subtitle`: Supporting text (author or key benefit)
-- **Tags**: Relevant YouTube tags for SEO
+
+### Issue 7: AI Tags Ignored by Old Tags (FIXED v2.2.7) ⭐- **Tags**: Relevant YouTube tags for SEO
+
+**Symptom**: Generic manual tags override smart AI tags
 
 **Gemini Prompts** (from `config/prompts.json`):
-- `youtube_title_template` - Title generation prompt
-- `youtube_description_template` - Description generation prompt
-- `thumbnail_hook_template` - Thumbnail text prompt
 
-**Output File**: `output.titles.json` with all metadata fields
+**Example**:- `youtube_title_template` - Title generation prompt
+
+```python- `youtube_description_template` - Description generation prompt
+
+# Before fix:- `thumbnail_hook_template` - Thumbnail text prompt
+
+# AI generates: "habit stacking" (relevant to Atomic Habits)
+
+# Manual generates: "James Clear business strategy" (generic)**Output File**: `output.titles.json` with all metadata fields
+
+# Result: Manual tag used (wrong priority) ❌
 
 **Model Config**:
-- Uses same Gemini model as Process stage (configurable in `settings.json`)
-- Fallback to `gemini-2.5-flash` if specified model fails
 
-### 6. Merge (`merge_av.py`)
-**Purpose**: Combine video and audio into final uploadable MP4.
+# After fix:- Uses same Gemini model as Process stage (configurable in `settings.json`)
 
-**Input Files**:
+# AI tag priority: 1 (highest)- Fallback to `gemini-2.5-flash` if specified model fails
+
+# Manual tag priority: 3 (fallback)
+
+# Result: AI tag used ✅### 6. Merge (`merge_av.py`)
+
+```**Purpose**: Combine video and audio into final uploadable MP4.
+
+
+
+**Cause**: Wrong priority assignment in `_merge_tags()`**Input Files**:
+
 - `video_snap.mp4` - Silent video from Render stage (1920x1080)
-- `narration.mp3` - Audio from TTS stage
-- `output.titles.json` - YouTube title for filename
 
-**Process**:
-1. Read YouTube title from `output.titles.json`
+**Fix**: Reversed priorities (commit 240e5ab)- `narration.mp3` - Audio from TTS stage
+
+```python- `output.titles.json` - YouTube title for filename
+
+# Before:
+
+register(primary, priority=1)  # Manual tags high**Process**:
+
+register(ai, priority=3)       # AI tags low ❌1. Read YouTube title from `output.titles.json`
+
 2. Sanitize title for filename (remove special chars, limit length)
-3. Run FFmpeg merge:
-   ```bash
-   ffmpeg -i video_snap.mp4 -i narration.mp3 \
-          -c:v copy -c:a aac -b:a 192k \
+
+# After:3. Run FFmpeg merge:
+
+register(ai, priority=1)       # AI tags high ✅   ```bash
+
+register(primary, priority=3)  # Manual tags fallback   ffmpeg -i video_snap.mp4 -i narration.mp3 \
+
+```          -c:v copy -c:a aac -b:a 192k \
+
           -shortest "[YouTube Title].mp4"
-   ```
-4. Delete old output if re-running (Unicode normalization handling)
 
-**Output**: `[YouTube Title].mp4` ready for upload
+**Result**:    ```
 
-**Smart Filename Handling**:
+- Content-aware tags now used4. Delete old output if re-running (Unicode normalization handling)
+
+- "habit stacking", "1 percent better" appear in final output
+
+- Better SEO and discoverability**Output**: `[YouTube Title].mp4` ready for upload
+
+
+
+---**Smart Filename Handling**:
+
 - Handles Unicode issues (em dash → spaces)
-- Truncates to 120 chars max
+
+## 🚀 Recent Changes (Version History)- Truncates to 120 chars max
+
 - Fuzzy matching to delete old versions
 
-### 7. Thumbnail (`thumbnail.py`)
-**Purpose**: Generate professional 16:9 thumbnail with dynamic text sizing.
+### v2.2.7 (2025-10-26) - Tag Priority Fix ⭐
 
-**Multi-Font System** (v2.2.0):
-Three font profiles with independent sizing dynamics:
+- ✅ AI tags now priority 1 (was 3)### 7. Thumbnail (`thumbnail.py`)
 
-1. **Bebas Neue** (Default - Bold Display):
-   - Base size: 100px
-   - Range: 60-140px
-   - Best for: Short punchy hooks (3-5 words)
-   - Scaling: Aggressive reduction for long text
+- ✅ Old manual tags fallback to priority 3 (was 1)**Purpose**: Generate professional 16:9 thumbnail with dynamic text sizing.
 
-2. **Cairo** (Arabic-friendly):
-   - Base size: 85px
-   - Range: 50-120px
+- ✅ Prevents generic tags from overriding content-aware AI tags
+
+- ✅ Result: "habit stacking", "1 percent better" now used**Multi-Font System** (v2.2.0):
+
+- ✅ Commit: 240e5abThree font profiles with independent sizing dynamics:
+
+
+
+### v2.2.6 (2025-10-24) - Gemini AI Tag Generation ⭐1. **Bebas Neue** (Default - Bold Display):
+
+- ✅ Complete rewrite of `_generate_ai_tags()` with SEO-focused prompt   - Base size: 100px
+
+- ✅ JSON output parsing (was CSV)   - Range: 60-140px
+
+- ✅ Auto-enforces API limit (495 chars)   - Best for: Short punchy hooks (3-5 words)
+
+- ✅ Each tag ≤26 chars (discovered YouTube's real limit)   - Scaling: Aggressive reduction for long text
+
+- ✅ Generates 25-30 tags, 450-495 raw chars, 80%+ spaced tags
+
+- ✅ Content-aware: "habit stacking", "1 percent better", "four laws"2. **Cairo** (Arabic-friendly):
+
+- ✅ YouTube upload: 26-char limit (was 30)   - Base size: 85px
+
+- ✅ Commits: ab8cff3, 9cce9df   - Range: 50-120px
+
    - Best for: Mixed language titles
-   - Scaling: Moderate, balanced
 
-3. **Impact** (Heavy Bold):
-   - Base size: 95px
+### v2.2.4 (2025-10-24) - Thumbnail & TTS   - Scaling: Moderate, balanced
+
+- ✅ 8 professional subtitle colors with auto-contrast
+
+- ✅ TTS: Removed Mutagen completely (ffprobe only)3. **Impact** (Heavy Bold):
+
+- ✅ Silent operation (no spam logs)   - Base size: 95px
+
    - Range: 55-130px
-   - Best for: Strong statements
-   - Scaling: Similar to Bebas but slightly smaller
 
-**Dynamic Sizing Algorithm**:
+### v2.2.2 (2025-10-24) - Empty Folder Cleanup   - Best for: Strong statements
+
+- ✅ Duplicate books auto-delete empty run folders   - Scaling: Similar to Bebas but slightly smaller
+
+- ✅ Reversed duplicate check order (check BEFORE add)
+
+- ✅ Clean `runs/` directory**Dynamic Sizing Algorithm**:
+
 ```python
-# Word count based adjustment
-if words <= 3: size = base_size
-elif words <= 5: size = base_size * 0.9
+
+### v2.2.1 (2025-10-24) - Database NoneType Fix# Word count based adjustment
+
+- ✅ Defensive None checks in 7 database functionsif words <= 3: size = base_size
+
+- ✅ Graceful handling of None titles/authorselif words <= 5: size = base_size * 0.9
+
 elif words <= 7: size = base_size * 0.75
-else: size = base_size * 0.6
 
-# Enforce min/max bounds
+### v2.1.0 - YouTube Sync Systemelse: size = base_size * 0.6
+
+- ✅ Auto-sync database.json from YouTube channel
+
+- ✅ Cross-environment duplicate detection# Enforce min/max bounds
+
 size = max(min_size, min(size, max_size))
-```
 
-**Thumbnail Elements**:
+---```
+
+
+
+## 🎯 Key Takeaways for AI Agent**Thumbnail Elements**:
+
 1. **Background**: Gradient or solid color
-2. **Book Cover**: Positioned and scaled
-3. **Main Title**: `thumbnail_title` (large, bold)
-4. **Subtitle**: `thumbnail_subtitle` (smaller, under title)
-5. **Effects**: Drop shadow, outline for readability
 
-**Input**: `output.titles.json` (needs `thumbnail_title` and `thumbnail_subtitle`)
-**Output**: `thumbnail.jpg` (1280x720, 16:9)
+1. **Tag Generation**: Gemini AI is PRIMARY (v2.2.6+)2. **Book Cover**: Positioned and scaled
+
+2. **Tag Priority**: AI = 1, Manual = 3 (v2.2.7 fix)3. **Main Title**: `thumbnail_title` (large, bold)
+
+3. **Tag Limit**: 26 chars per tag (NOT 30!)4. **Subtitle**: `thumbnail_subtitle` (smaller, under title)
+
+4. **API Limit**: 499 chars (raw + 2×spaced)5. **Effects**: Drop shadow, outline for readability
+
+5. **repo_root**: Always use correct `parents[N]` depth
+
+6. **None checks**: Always check before string ops**Input**: `output.titles.json` (needs `thumbnail_title` and `thumbnail_subtitle`)
+
+7. **Duplicate check**: BEFORE creating folder**Output**: `thumbnail.jpg` (1280x720, 16:9)
+
+8. **YouTube sync**: Auto-syncs from channel
 
 **Fallback System**:
-- If `thumbnail_title` missing → use `main_title` or `youtube_title`
-- If `thumbnail_subtitle` missing → use `author_name` or `"Book Summary"`
-- If font not found → graceful degradation to system font
 
-**Font Loading Priority**:
-1. `assets/fonts/[FontName].ttf`
+**When debugging tags**:- If `thumbnail_title` missing → use `main_title` or `youtube_title`
+
+1. Check `output.titles.json` → `tags` field- If `thumbnail_subtitle` missing → use `author_name` or `"Book Summary"`
+
+2. Verify each tag ≤26 chars- If font not found → graceful degradation to system font
+
+3. Calculate API chars: `sum(len(t) + (2 if ' ' in t else 0))`
+
+4. Should see content-aware tags (e.g., "habit stacking")**Font Loading Priority**:
+
+5. 80%+ should be spaced tags1. `assets/fonts/[FontName].ttf`
+
 2. System fonts (Windows: `C:\Windows\Fonts\`)
-3. Fallback to PIL default
+
+**This file is the single source of truth for the entire project.**3. Fallback to PIL default
+
+When in doubt, search this file first! 🎯
 
 ### 8. Pipeline Orchestration (`run_pipeline.py`)
-**Stage Management**:
-- Saves `summary.json` after EVERY stage completion
-- Resume capability: `--resume` flag reads last successful stage
-- Retry logic: Max 10 attempts per stage with exponential backoff
-- **Dual-check validation**: Stage marked complete ONLY if `summary.json` says "ok" AND artifact file exists
 
-**Critical Resume Logic** (`_should_retry_stage`, Line 240):
+---**Stage Management**:
+
+- Saves `summary.json` after EVERY stage completion
+
+**Last Updated**: 2025-10-26- Resume capability: `--resume` flag reads last successful stage
+
+**Version**: v2.2.7- Retry logic: Max 10 attempts per stage with exponential backoff
+
+**AI Agent Optimized**: ✅ Yes- **Dual-check validation**: Stage marked complete ONLY if `summary.json` says "ok" AND artifact file exists
+
+**Total Sections**: 15
+
+**Total Lines**: ~600**Critical Resume Logic** (`_should_retry_stage`, Line 240):
+
 ```python
 # If stage was completed successfully → Skip
 # If stage was the one that failed → Retry
