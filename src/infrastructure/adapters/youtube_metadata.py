@@ -979,10 +979,12 @@ def _merge_tags(
         seen_must.add(key)
 
     # Register candidates by priority bucket
+    # UPDATED: AI tags get highest priority (1) since they include everything
+    # Must-have tags still priority 0 to ensure critical tags are always included
     register(must_have, priority=0)
-    register(primary, priority=1)
-    register(density, priority=2)
-    register(ai, priority=3)
+    register(ai, priority=1)           # AI tags now priority 1 (higher)
+    register(density, priority=2)      # Density tags priority 2
+    register(primary, priority=3)      # Old basic tags now priority 3 (lower)
     register(FALLBACK_DENSE_TAGS, priority=4)
 
     candidates = list(best_candidates.values())
