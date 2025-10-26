@@ -677,6 +677,45 @@ def _wrap_text_balanced(text: str, font: Any, max_width: int, max_lines: int = 3
     return lines
 
 
+def _draw_text_with_soft_shadow(
+    draw: ImageDraw.ImageDraw, 
+    xy: Tuple[int, int], 
+    text: str, 
+    font: Any, 
+    fill=(255, 255, 255), 
+    shadow_color=(0, 0, 0, 80),  # Black with 31% opacity
+    shadow_offset=(3, 3),  # Offset: (x, y)
+    shadow_blur_radius: int = 2  # Blur iterations
+):
+    """Draw text with a soft, smooth shadow effect"""
+    x, y = xy
+    shadow_x, shadow_y = shadow_offset
+    
+    # Draw multiple shadow layers with decreasing opacity for blur effect
+    if shadow_blur_radius > 0:
+        # Shadow layers for blur effect
+        for i in range(shadow_blur_radius, 0, -1):
+            # Decrease opacity as we go outward
+            opacity = int(shadow_color[3] * (i / shadow_blur_radius) * 0.6)
+            blur_shadow = (shadow_color[0], shadow_color[1], shadow_color[2], opacity)
+            
+            # Draw shadow in a small radius around the offset point
+            for dx in range(-i, i + 1):
+                for dy in range(-i, i + 1):
+                    draw.text(
+                        (x + shadow_x + dx, y + shadow_y + dy), 
+                        text, 
+                        font=font, 
+                        fill=blur_shadow
+                    )
+    else:
+        # Simple shadow without blur
+        draw.text((x + shadow_x, y + shadow_y), text, font=font, fill=shadow_color)
+    
+    # Draw main text on top
+    draw.text((x, y), text, font=font, fill=fill)
+
+
 def _draw_text_with_outline(draw: ImageDraw.ImageDraw, xy: Tuple[int, int], text: str, font: Any, fill=(255, 255, 255), outline=(0, 0, 0), outline_width: int = 4):
     x, y = xy
     # Draw outline only if requested
@@ -1530,7 +1569,7 @@ def generate_thumbnail(
     base = base.convert("RGBA")
     draw = ImageDraw.Draw(base)
 
-    # Draw title lines centered horizontally with semi-transparent fill
+    # Draw title lines centered horizontally with semi-transparent fill and soft shadow
     for idx, line in enumerate(title_lines):
         lw = _text_width(title_font, line)
         cx = int(text_area_x + max(0, (text_area_w - lw) / 2))
@@ -1540,7 +1579,18 @@ def generate_thumbnail(
                 print(f"[thumb] line {idx+1}: '{line}' | width={lw}px | area_width={text_area_w}px | centered_x={cx}")
             except Exception:
                 pass
-        _draw_text_with_outline(draw, (cx, int(y)), line, title_font, fill=tc, outline=(0, 0, 0, 0), outline_width=0)
+        
+        # Draw with soft shadow for depth and elegance
+        _draw_text_with_soft_shadow(
+            draw, 
+            (cx, int(y)), 
+            line, 
+            title_font, 
+            fill=tc,
+            shadow_color=(0, 0, 0, 80),  # Soft black shadow (31% opacity)
+            shadow_offset=(4, 4),  # Subtle offset
+            shadow_blur_radius=2  # Smooth blur
+        )
         y += title_heights[idx] + line_gap
 
     # Draw subtitle lines if present, also centered
