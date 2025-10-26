@@ -791,58 +791,102 @@ def _generate_ai_tags(
     target_count: int = 60,
 ) -> list[str]:
     """
-    Generate AI-powered topic tags using Gemini.
-    target_count controls how many raw suggestions we request before filtering.
+    Generate AI-powered topic tags using Gemini with optimized SEO-focused prompt.
+    Returns tags that are content-aware, SEO-optimized, and YouTube-compliant.
     """
-    tpl = prompts.get("tags_template") or (
-        "Give me {count} relevant tags for this book that reflect its content and topic.\n\n"
-        "CRITICAL RULES:\n"
-        "- Do NOT mention the book title: {book_name}\n"
-        "- Do NOT mention the author name: {author_name}\n"
-        "- Return ONLY topic-related keywords (e.g., 'personal development', 'success strategies')\n"
-        "- Provide a mix of lengths: ~1/3 short tags (1-2 words), ~1/3 medium tags (3-4 words), ~1/3 longer phrases (5-6 words)\n"
-        "- Keep every tag under 30 characters after trimming\n"
-        "- Include both broad themes AND specific takeaways\n"
-        "- Return as a simple comma-separated list\n\n"
-        "Book: {book_name} by {author_name}"
-    )
+    # New optimized prompt for better SEO tags
+    prompt = f"""You are a YouTube SEO expert. Generate optimized tags for a book summary video.
 
-    # Handle list templates
-    if isinstance(tpl, list):
-        tpl = "\n".join(tpl)
+**Book:** {book_title}
+**Author:** {author_name or "Unknown"}
 
-    # Format prompt
-    prompt = (
-        tpl.replace("{book_name}", book_title)
-        .replace("{author_name}", author_name or "Unknown")
-        .replace("{count}", str(max(target_count, 10)))
-    )
+**REQUIREMENTS:**
+1. Generate EXACTLY 25-30 tags
+2. Each tag MUST be ≤26 characters (STRICT LIMIT)
+3. Target total: 450-495 characters (sum of all tag lengths)
+4. Mix of tag types:
+   - Book/Author combinations (5-7 tags)
+   - SEO keywords (10-12 tags)
+   - Topic tags (8-10 tags)
+
+**TAG CATEGORIES:**
+
+A) Must-have tags (include these):
+   - Book title: "{book_title}"
+   - Author name: "{author_name or "Unknown"}"
+   - Combined: "{book_title} {author_name or ""}"
+   - Main keyword: "book summary"
+   - Combined with book: "{book_title} book summary"
+   - Brand: "InkEcho"
+   - Format: "audiobook"
+
+B) SEO Keywords (popular search terms):
+   - self improvement
+   - personal development
+   - productivity
+   - motivational
+   - educational
+   - book review
+   - self help
+
+C) Topic-specific tags (related to book content):
+   - Generate 10-15 tags about the book's specific topics, concepts, and key ideas
+   - Use natural language phrases (prefer spaced tags like "habit formation" over "habitformation")
+   - Include key concepts, techniques, or quotes from the book
+   - Focus on searchable terms people actually type
+
+**FORMAT:**
+Return ONLY a JSON array of strings, nothing else. Example:
+["tag1", "tag2", "tag3"]
+
+**CRITICAL:**
+- Every tag MUST be ≤26 characters
+- Prefer spaced tags (better SEO) over compressed tags
+- Include specific book concepts (e.g., for Atomic Habits: "habit stacking", "1 percent better")
+- Make tags searchable and relevant to video content"""
 
     try:
         # Call Gemini
         resp = model.generate_content(prompt)
         raw = resp.text.strip() if hasattr(resp, 'text') else ""
 
-        # Parse comma-separated tags
+        # Parse JSON response
         if raw:
-            tags = [tag.strip() for tag in raw.split(',')]
-
-            # Clean and validate each tag
-            cleaned_tags = []
-            for t in tags:
-                if not t or len(t) <= 2:
-                    continue
-
-                # Remove leading numbers and dots (e.g., "1. tag" → "tag")
-                t = re.sub(r'^\d+[\.\)]\s*', '', t)
-
-                # Skip if still has numbers at start or is too long
-                if t and not t[0].isdigit() and len(t.split()) <= 6:
+            # Remove markdown code blocks if present
+            raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
+            raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
+            raw = raw.strip()
+            
+            # Parse JSON
+            tags = json.loads(raw)
+            
+            if isinstance(tags, list):
+                # Clean and validate each tag
+                cleaned_tags = []
+                for t in tags:
+                    if not t or len(t) <= 2 or len(t) > 26:
+                        continue
+                    
                     sanitized = _sanitize_tag_text(t)
-                    if sanitized:
+                    if sanitized and len(sanitized) <= 26:
                         cleaned_tags.append(sanitized)
-
-            return cleaned_tags[:target_count]
+                
+                # Ensure we don't exceed API limit (499 chars)
+                # API chars = raw_chars + (2 × spaced_tags)
+                final_tags = []
+                api_chars = 0
+                for tag in cleaned_tags:
+                    tag_api_cost = len(tag) + (2 if " " in tag else 0)
+                    if api_chars + tag_api_cost <= 495:  # Leave 4 chars buffer
+                        final_tags.append(tag)
+                        api_chars += tag_api_cost
+                    else:
+                        break  # Stop adding tags when we hit API limit
+                
+                return final_tags[:target_count]
+    except json.JSONDecodeError as e:
+        print(f"[AI Tags] JSON parse error: {e}")
+        # Don't print raw if it might not be defined
     except Exception as e:
         print(f"[AI Tags] Error: {e}")
 

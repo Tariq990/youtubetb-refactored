@@ -461,10 +461,11 @@ def upload_video(
         # Keep only alphanumeric and spaces (NO special chars allowed by YouTube)
         s = regex_module.sub(r"[^A-Za-z0-9\s]", "", s)
         s = regex_module.sub(r"\s+", ' ', s).strip()
-        # YouTube enforces 30-char max per tag (discovered via testing)
-        # Truncate tags longer than 30 chars to avoid "invalid video keywords" error
-        if len(s) > 30:
-            s = s[:30].rstrip()
+        # YouTube enforces 26-char max per tag (discovered via empirical testing)
+        # IMPORTANT: Despite documentation saying 30, actual working limit is 26 chars
+        # Tags >26 chars cause "invalid video keywords" error
+        if len(s) > 26:
+            s = s[:26].rstrip()
         return s if s else None
 
     # Apply sanitization to dynamic tags list
