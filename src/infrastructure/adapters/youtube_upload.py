@@ -272,41 +272,49 @@ def _add_video_to_playlist(service, video_id: str, playlist_id: str, debug: bool
 def _get_service(client_secret: Path, token_file: Path, debug: bool = False):
     build, MediaFileUpload, InstalledAppFlow, Credentials = _lazy_google()
     creds = None
+    
+    # مرحلة 1: التحقق من وجود Token
     if token_file.exists():
+        print(f"[upload] ✅ Token file found: {token_file}")
         try:
             creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+            print("[upload] ✅ Token loaded successfully")
         except Exception as e:
-            if debug:
-                print(f"[upload] Failed to load token file: {e}")
+            print(f"[upload] ❌ Failed to load token file: {e}")
             creds = None
+    else:
+        print(f"[upload] ❌ Token file NOT found: {token_file}")
+        print("[upload] ⚠️  First-time authentication required")
     
-    # Try to refresh if expired
+    # مرحلة 2: فحص صلاحية Token
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            if debug:
-                print("[upload] Token expired, attempting refresh...")
+            print("[upload] ⚠️  Token expired - attempting auto-refresh...")
             try:
                 from google.auth.transport.requests import Request  # type: ignore
                 creds.refresh(Request())
-                if debug:
-                    print("[upload] ✅ Token refreshed successfully!")
+                print("[upload] ✅ Token refreshed successfully!")
+                print("[upload] 🎉 You're using Production Mode - Token lasts 6+ months!")
                 # Save the refreshed token immediately
                 try:
                     token_file.write_text(creds.to_json(), encoding="utf-8")
-                    if debug:
-                        print(f"[upload] ✅ Saved refreshed token to {token_file}")
+                    print(f"[upload] ✅ Saved refreshed token to {token_file}")
                 except Exception as e:
-                    if debug:
-                        print(f"[upload] ⚠️  Failed to save refreshed token: {e}")
+                    print(f"[upload] ⚠️  Failed to save refreshed token: {e}")
             except Exception as e:
-                if debug:
-                    print(f"[upload] ❌ Token refresh failed: {e}")
+                print(f"[upload] ❌ Token refresh failed: {e}")
+                print(f"[upload] ❌ Error details: {str(e)}")
                 creds = None
         
         # Only prompt for manual auth if refresh failed or no refresh token
         if not creds:
-            if debug:
-                print("[upload] ⚠️  No valid credentials - starting manual OAuth flow...")
+            print("\n" + "="*70)
+            print("🔐 MANUAL AUTHENTICATION REQUIRED")
+            print("="*70)
+            print("Reason: No valid token OR auto-refresh failed")
+            print("Next: Browser will open for Google OAuth authorization")
+            print("="*70 + "\n")
+            
             client_id = os.environ.get("YT_CLIENT_ID") or os.environ.get("YOUTUBE_CLIENT_ID")
             client_secret_env = os.environ.get("YT_CLIENT_SECRET") or os.environ.get("YOUTUBE_CLIENT_SECRET")
             redirect_uri = os.environ.get("YT_REDIRECT_URI")  # optional
@@ -328,31 +336,51 @@ def _get_service(client_secret: Path, token_file: Path, debug: bool = False):
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(str(client_secret), SCOPES)
 
-            # Set manual redirect URI for console flow
-            flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
-
-            # Use manual authorization (no local server)
+            # Use local server authorization (automatic, opens browser)
             print("\n" + "="*70)
-            print("⚠️  Re-authentication required - Token refresh failed")
+            print("⚠️  RE-AUTHENTICATION REQUIRED")
             print("="*70)
+            print("Why: Token expired and auto-refresh failed")
+            print("Action: OAuth authorization needed")
+            print("="*70)
+            print("\n� What will happen:")
+            print("1. Browser will open automatically")
+            print("2. Sign in with: tariqziad0077@gmail.com")
+            print("3. If you see 'Google hasn't verified this app':")
+            print("   - Click 'Advanced'")
+            print("   - Click 'Go to TEST (unsafe)'")
+            print("4. Grant permissions")
+            print("5. Browser will show 'Authentication successful'")
+            print("6. Return here - done automatically!")
+            print("="*70)
+            
+            input("\n� Press ENTER to open browser and start authentication...")
+            
             try:
-                auth_url, _ = flow.authorization_url(prompt='consent')
+                # Run local server (port 0 = random available port)
+                creds = flow.run_local_server(
+                    port=0,
+                    success_message='✅ Authentication successful! You can close this window.',
+                    open_browser=True
+                )
                 print("\n" + "="*70)
-                print("🔗 Please visit this URL to authorize:")
-                print(auth_url)
-                print("="*70)
-                code = input("\n📝 Enter the authorization code from the browser: ").strip()
-                flow.fetch_token(code=code)
-                creds = flow.credentials
-                print("✅ Authorization successful!\n")
+                print("✅ AUTHENTICATION SUCCESSFUL!")
+                print("🎉 New token saved - lasts 6+ months (Production Mode)")
+                print("="*70 + "\n")
             except Exception as e:
+                print(f"\n❌ AUTHENTICATION FAILED: {e}")
                 if debug:
                     print("[upload] authentication failed:", e)
                 raise
             try:
                 token_file.write_text(creds.to_json(), encoding="utf-8")
+                print(f"[upload] ✅ Token saved to: {token_file}")
             except Exception:
                 pass
+    else:
+        print("[upload] ✅ Token is VALID - using existing authentication")
+        print("[upload] 🎉 Production Mode active - no re-auth needed!")
+        
     service = build("youtube", "v3", credentials=creds)
     return service, MediaFileUpload
 

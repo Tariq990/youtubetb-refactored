@@ -1398,20 +1398,19 @@ def generate_thumbnail(
         except Exception:
             pass
     
-    # Process subtitle: split into 2 lines if more than 3 words
+    # Process subtitle: split into 2 lines if 3+ words (first line = 2 words, rest on second line)
     subtitle_lines = []
     if subtitle:
         subtitle_text = str(subtitle)
         subtitle_words = subtitle_text.split()
-        if len(subtitle_words) > 3:
-            # Split into 2 lines - distribute words evenly
-            mid = len(subtitle_words) // 2
+        if len(subtitle_words) >= 3:
+            # Split into 2 lines - first line gets 2 words, rest on second line
             subtitle_lines = [
-                " ".join(subtitle_words[:mid]),
-                " ".join(subtitle_words[mid:])
+                " ".join(subtitle_words[:2]),  # First 2 words
+                " ".join(subtitle_words[2:])   # Remaining words
             ]
             if debug:
-                print(f"[thumb] subtitle split into 2 lines ({len(subtitle_words)} words)")
+                print(f"[thumb] subtitle split into 2 lines: '{subtitle_lines[0]}' / '{subtitle_lines[1]}' ({len(subtitle_words)} words)")
             
             # CRITICAL: Check if any subtitle line is too wide and reduce font size
             max_sub_line_attempts = 20
@@ -1425,7 +1424,10 @@ def generate_thumbnail(
                 if debug and attempt < max_sub_line_attempts - 1:
                     print(f"[thumb] subtitle line too wide ({max_sub_line_width}px > {text_area_w}px), reducing to {ssize}px")
         else:
+            # 1-2 words: keep on single line
             subtitle_lines = [subtitle_text]
+            if debug:
+                print(f"[thumb] subtitle single line: '{subtitle_text}' ({len(subtitle_words)} words)")
     
     # UNIFIED SPACING: 110px for all subtitles (single-line and multi-line)
     sub_gap_before = int(max(0, subtitle_gap)) if subtitle else 0  # Use consistent 110px gap
@@ -1604,7 +1606,7 @@ def main(
     titles_json: Path,
     run_dir: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 20,
+    subtitle_gap: int = 110,  # Fixed: Match generate_thumbnail() default (was 20)
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
