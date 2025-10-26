@@ -1672,7 +1672,7 @@ if __name__ == "__main__":
     p.add_argument("--run", dest="run_dir", default="runs/latest", help="Run directory")
     p.add_argument("--titles", dest="titles_json", default=None, help="Path to output.titles.json (defaults to <run>/output.titles.json)")
     p.add_argument("--out", dest="output_path", default=None, help="Output thumbnail path (defaults to <run>/thumbnail.jpg)")
-    p.add_argument("--gap", dest="subtitle_gap", type=int, default=20, help="Vertical gap in pixels between title block and subtitle (default: 20)")
+    p.add_argument("--gap", dest="subtitle_gap", type=int, default=110, help="Vertical gap in pixels between title block and subtitle (default: 110)")
     p.add_argument("--title-line-gap", dest="title_line_gap", type=int, default=40, help="Vertical gap between lines of the main title (default: 40)")
     p.add_argument("--title-size", dest="title_font_size", type=int, default=250, help="Main title font size in pixels (default: 250)")
     p.add_argument("--auto-title-size", dest="dynamic_title_size", action="store_true", default=True, help="Dynamically size title based on word count and text length. Sizes range 100-220px. Use --no-auto-title-size to disable.")
