@@ -13,10 +13,19 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
+import getpass
 
 
-# Encryption password (stored securely in code)
-ENCRYPTION_PASSWORD = "2552025"
+# Encryption password - read from environment with fallback
+def get_encryption_password() -> str:
+    """Get encryption password from environment or use default"""
+    password = os.getenv("YT_TB_ENCRYPTION_PASSWORD")
+    if password:
+        return password
+    # Fallback to hardcoded for backward compatibility (not recommended for production)
+    return "2552025"
+
+ENCRYPTION_PASSWORD = get_encryption_password()
 
 
 def derive_key_from_password(password: str, salt: bytes) -> bytes:

@@ -29,6 +29,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube",
 ]
 
+API_MAX_CHARS = 500
+API_SAFE_BUFFER = 40  # leave headroom to avoid YouTube "invalidTags" at hard limit
+API_SOFT_LIMIT = API_MAX_CHARS - API_SAFE_BUFFER
+
 
 def _sanitize_filename(name: str, max_len: int = 120) -> str:
     name = name.strip()
@@ -271,16 +275,38 @@ def _get_service(client_secret: Path, token_file: Path, debug: bool = False):
     if token_file.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
-        except Exception:
+        except Exception as e:
+            if debug:
+                print(f"[upload] Failed to load token file: {e}")
             creds = None
+    
+    # Try to refresh if expired
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            if debug:
+                print("[upload] Token expired, attempting refresh...")
             try:
                 from google.auth.transport.requests import Request  # type: ignore
                 creds.refresh(Request())
-            except Exception:
+                if debug:
+                    print("[upload] ✅ Token refreshed successfully!")
+                # Save the refreshed token immediately
+                try:
+                    token_file.write_text(creds.to_json(), encoding="utf-8")
+                    if debug:
+                        print(f"[upload] ✅ Saved refreshed token to {token_file}")
+                except Exception as e:
+                    if debug:
+                        print(f"[upload] ⚠️  Failed to save refreshed token: {e}")
+            except Exception as e:
+                if debug:
+                    print(f"[upload] ❌ Token refresh failed: {e}")
                 creds = None
+        
+        # Only prompt for manual auth if refresh failed or no refresh token
         if not creds:
+            if debug:
+                print("[upload] ⚠️  No valid credentials - starting manual OAuth flow...")
             client_id = os.environ.get("YT_CLIENT_ID") or os.environ.get("YOUTUBE_CLIENT_ID")
             client_secret_env = os.environ.get("YT_CLIENT_SECRET") or os.environ.get("YOUTUBE_CLIENT_SECRET")
             redirect_uri = os.environ.get("YT_REDIRECT_URI")  # optional
@@ -306,6 +332,9 @@ def _get_service(client_secret: Path, token_file: Path, debug: bool = False):
             flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
 
             # Use manual authorization (no local server)
+            print("\n" + "="*70)
+            print("⚠️  Re-authentication required - Token refresh failed")
+            print("="*70)
             try:
                 auth_url, _ = flow.authorization_url(prompt='consent')
                 print("\n" + "="*70)
@@ -432,8 +461,10 @@ def upload_video(
         # Keep only alphanumeric and spaces (NO special chars allowed by YouTube)
         s = regex_module.sub(r"[^A-Za-z0-9\s]", "", s)
         s = regex_module.sub(r"\s+", ' ', s).strip()
-        # NOTE: No 30-char truncation! YouTube API docs don't specify per-tag limit.
-        # Only 500-char total limit applies.
+        # YouTube enforces 30-char max per tag (discovered via testing)
+        # Truncate tags longer than 30 chars to avoid "invalid video keywords" error
+        if len(s) > 30:
+            s = s[:30].rstrip()
         return s if s else None
 
     # Apply sanitization to dynamic tags list
@@ -485,15 +516,18 @@ def upload_video(
     print(f"[upload] After dedup: {len(tags)} unique tags")
     
     # === CALCULATE CHARACTER LIMIT ===
-    def calc_total_chars(tag_list):
-        """
-        Calculate total characters for YouTube tags.
-        NOTE: YouTube API counts ONLY tag characters, NOT commas!
-        Each tag is separate, commas are added by YouTube UI for display only.
-        """
-        if not tag_list:
-            return 0
-        return sum(len(tag) for tag in tag_list)  # No comma counting!
+    def calc_raw_chars(tag_list):
+        """Return sum of tag lengths without transport quoting."""
+        return sum(len(tag) for tag in tag_list)
+
+    def calc_api_chars(tag_list):
+        """Approximate YouTube API character count (quotes around spaced tags)."""
+        total = 0
+        for tag in tag_list:
+            total += len(tag)
+            if " " in tag:
+                total += 2  # YouTube wraps spaced tags in quotes internally
+        return total
     
     # === BUILD FINAL TAG LIST ===
     final_tags = fixed_tags.copy()
@@ -512,6 +546,10 @@ def upload_video(
         "self help"
     ]
     
+    # Remove dynamic tags that duplicate critical SEO entries so longer combos can take the slots
+    critical_lower = {tag.lower() for tag in critical_seo_tags}
+    tags = [tag for tag in tags if tag.lower() not in critical_lower]
+
     # Add critical SEO tags (avoid duplicates - case insensitive)
     added_seo = 0
     for tag in critical_seo_tags:
@@ -521,11 +559,12 @@ def upload_video(
     
     print(f"[upload] Added {added_seo}/{len(critical_seo_tags)} critical SEO tags (skipped duplicates)")
     
-    reserved_chars = calc_total_chars(final_tags)
-    available_chars = 500 - reserved_chars
+    reserved_raw = calc_raw_chars(final_tags)
+    reserved_api = calc_api_chars(final_tags)
+    available_chars = max(API_SOFT_LIMIT - reserved_api, 0)
     
-    print(f"[upload] Reserved chars (fixed + SEO): {reserved_chars}")
-    print(f"[upload] Available space for dynamic tags: {available_chars} chars")
+    print(f"[upload] Reserved chars (fixed + SEO): raw={reserved_raw}, api={reserved_api}")
+    print(f"[upload] Available API space for dynamic tags: {available_chars} chars (soft limit {API_SOFT_LIMIT})")
     
     # === FILL REMAINING SPACE WITH DYNAMIC TAGS (SMART PRIORITIZATION) ===
     # Sort tags by SEO value (shorter = better, common keywords = higher priority)
@@ -533,20 +572,32 @@ def upload_video(
         """
         Calculate priority score for a tag (HIGHER is better).
         Prioritizes:
-        1. Short tags (more space for other tags)
-        2. Common SEO keywords
-        3. Book-related terms
+        1. Book/author combinations (must keep)
+        2. Longer descriptive tags to reach character quota
+        3. Common SEO keywords
         """
         score = 0
         tag_lower = tag.lower()
         
-        # Bonus for short tags (more efficient use of space)
-        if len(tag) <= 10:
+        # Strongly prioritize combos that mention the book/author
+        if book_title and book_title.lower() in tag_lower:
+            score += 80
+        if author_name and author_name.lower() in tag_lower:
+            score += 70
+        if "book summary" in tag_lower:
+            score += 35
+
+        # Encourage longer descriptive tags once combos are satisfied
+        tag_len = len(tag)
+        if tag_len >= 25:
+            score += 40
+        elif tag_len >= 20:
             score += 30
-        elif len(tag) <= 15:
+        elif tag_len >= 15:
             score += 20
-        elif len(tag) <= 20:
-            score += 10
+        else:
+            # Keep a small preference for efficient short tags
+            score += 5
         
         # Bonus for high-value SEO keywords
         high_value_keywords = {
@@ -588,9 +639,9 @@ def upload_video(
     added_count = 0
     for tag in tags:
         # Check BOTH character limit AND tag count limit
-        test_total = calc_total_chars(final_tags + [tag])
-        
-        if test_total <= 500 and len(final_tags) < MAX_TOTAL_TAGS:
+        prospective_api = calc_api_chars(final_tags + [tag])
+
+        if prospective_api <= API_SOFT_LIMIT and len(final_tags) < MAX_TOTAL_TAGS:
             final_tags.append(tag)
             added_count += 1
         elif len(final_tags) >= MAX_TOTAL_TAGS:
@@ -599,17 +650,15 @@ def upload_video(
             break
         else:
             # Hit character limit
-            remaining_space = 500 - calc_total_chars(final_tags)
+            remaining_space = API_SOFT_LIMIT - calc_api_chars(final_tags)
             if remaining_space < 3:  # Less than 3 chars left, stop trying
                 break
             # Try to fit short tags in remaining space
-            if len(tag) <= remaining_space and len(final_tags) < MAX_TOTAL_TAGS:
+            tag_api_len = len(tag) + (2 if " " in tag else 0)
+            if tag_api_len <= remaining_space and len(final_tags) < MAX_TOTAL_TAGS:
                 final_tags.append(tag)
                 added_count += 1
     
-    final_total = calc_total_chars(final_tags)
-    efficiency = (final_total / 500) * 100
-
     # Final validation: YouTube only allows letters, numbers, and spaces
     # NO hyphens, underscores, or special characters allowed!
     # NOTE: Removed arbitrary 30-char limit per tag - YouTube API docs don't specify this!
@@ -627,30 +676,6 @@ def upload_video(
         print(f"[upload] Dropped {len(dropped)} invalid tags (special chars): {dropped}")
 
     final_tags = validated
-
-    final_total = calc_total_chars(final_tags)
-    efficiency = (final_total / 500) * 100 if final_total else 0
-
-    print(f"\n{'='*60}")
-    print(f"📊 TAG STATISTICS (YouTube API Limits Applied)")
-    print(f"{'='*60}")
-    print(f"✅ Total tags: {len(final_tags)}")
-    print(f"   • Fixed tags: {len(fixed_tags)} (InkEcho + Book + Author)")
-    print(f"   • SEO tags: 9 (critical keywords)")
-    print(f"   • Dynamic tags: {added_count} (AI-generated + prioritized)")
-    print(f"✅ Character usage: {final_total} / 500 ({efficiency:.1f}% efficient)")
-    print(f"✅ Remaining space: {500 - final_total} chars")
-    print(f"\n📋 FINAL TAG LIST:")
-    print(f"   Fixed: {', '.join(final_tags[:len(fixed_tags)])}")
-    if len(final_tags) > len(fixed_tags):
-        dynamic_preview = final_tags[len(fixed_tags):len(fixed_tags)+15]
-        remaining = len(final_tags) - len(fixed_tags) - len(dynamic_preview)
-        if remaining > 0:
-            print(f"   Dynamic: {', '.join(dynamic_preview)}... (+{remaining} more)")
-        else:
-            print(f"   Dynamic: {', '.join(dynamic_preview)}")
-    print(f"\n⚠️  Note: No arbitrary tag count limit! Only 500-char total per YouTube API.")
-    print(f"{'='*60}\n")
 
     # === FINAL DUPLICATE CHECK (SAFETY NET) ===
     # Remove any remaining duplicates (case-insensitive)
@@ -670,6 +695,107 @@ def upload_video(
         print(f"⚠️  REMOVED {len(duplicates_found)} DUPLICATE TAGS: {duplicates_found}")
         final_tags = deduped_tags
         print(f"✅ Final tag count after dedup: {len(final_tags)}\n")
+
+    MIN_TARGET_TAG_CHARS = 430
+
+    final_raw_total = calc_raw_chars(final_tags)
+    final_api_total = calc_api_chars(final_tags)
+
+    # Attempt to reach minimum character usage by leveraging longer unused tags
+    if final_raw_total < MIN_TARGET_TAG_CHARS:
+        final_lower_map = {tag.lower(): idx for idx, tag in enumerate(final_tags)}
+        dynamic_start_idx = len(fixed_tags) + added_seo
+        dynamic_indices = list(range(dynamic_start_idx, len(final_tags))) if len(final_tags) > dynamic_start_idx else []
+
+        remaining_candidates = [
+            tag for tag in tags
+            if tag.lower() not in final_lower_map
+        ]
+        filler_candidates = [
+            "innovation",
+            "venturecapital",
+            "startupgrowth",
+            "businessmindset",
+        ]
+        for filler in filler_candidates:
+            if filler.lower() not in final_lower_map:
+                remaining_candidates.append(filler)
+        remaining_candidates.sort(key=len, reverse=True)
+
+        while remaining_candidates and final_raw_total < MIN_TARGET_TAG_CHARS:
+            candidate = remaining_candidates.pop(0)
+            cand_lower = candidate.lower()
+            if cand_lower in final_lower_map:
+                continue
+
+            # Option 1: append if we still have capacity
+            candidate_api = len(candidate) + (2 if " " in candidate else 0)
+            if len(final_tags) < MAX_TOTAL_TAGS and final_api_total + candidate_api <= API_SOFT_LIMIT:
+                final_tags.append(candidate)
+                final_lower_map[cand_lower] = len(final_tags) - 1
+                dynamic_indices.append(len(final_tags) - 1)
+                final_raw_total += len(candidate)
+                final_api_total += candidate_api
+                continue
+
+            # Option 2: replace the shortest dynamic tag with a longer candidate
+            if dynamic_indices:
+                shortest_idx = min(dynamic_indices, key=lambda idx: len(final_tags[idx]))
+                shortest_tag = final_tags[shortest_idx]
+                if len(candidate) <= len(shortest_tag):
+                    continue
+                shortest_api = len(shortest_tag) + (2 if " " in shortest_tag else 0)
+                potential_api = final_api_total - shortest_api + candidate_api
+                if potential_api > API_SOFT_LIMIT:
+                    continue
+                final_lower_map.pop(shortest_tag.lower(), None)
+                final_tags[shortest_idx] = candidate
+                final_lower_map[cand_lower] = shortest_idx
+                final_raw_total = final_raw_total - len(shortest_tag) + len(candidate)
+                final_api_total = potential_api
+            else:
+                break
+
+        if final_raw_total < MIN_TARGET_TAG_CHARS:
+            print(f"⚠️ Could not reach {MIN_TARGET_TAG_CHARS} raw chars (final raw {final_raw_total}).")
+
+    if final_api_total > API_SOFT_LIMIT:
+        # Trim lowest-priority dynamic tags until we fall back within the safe envelope
+        dynamic_floor = len(fixed_tags) + added_seo
+        while len(final_tags) > dynamic_floor and final_api_total > API_SOFT_LIMIT:
+            removed_tag = final_tags.pop()
+            final_api_total = calc_api_chars(final_tags)
+            final_raw_total = calc_raw_chars(final_tags)
+            if debug:
+                print(f"[upload] Trimmed tag to fit soft limit: {removed_tag}")
+
+    efficiency_api = (final_api_total / API_SOFT_LIMIT) * 100 if API_SOFT_LIMIT else 0
+    efficiency_raw = (final_raw_total / API_SOFT_LIMIT) * 100 if API_SOFT_LIMIT else 0
+    dynamic_count = max(len(final_tags) - (len(fixed_tags) + added_seo), 0)
+
+    print(f"\n{'='*60}")
+    print(f"📊 TAG STATISTICS (YouTube API Limits Applied)")
+    print(f"{'='*60}")
+    print(f"✅ Total tags: {len(final_tags)}")
+    print(f"   • Fixed tags: {len(fixed_tags)} (InkEcho + Book + Author)")
+    print(f"   • SEO tags: {added_seo} (critical keywords)")
+    print(f"   • Dynamic tags: {dynamic_count}")
+    hard_headroom = API_MAX_CHARS - final_api_total
+    soft_headroom = API_SOFT_LIMIT - final_api_total
+    print(f"✅ Raw char usage: {final_raw_total} / {API_SOFT_LIMIT} ({efficiency_raw:.1f}% raw vs soft)")
+    print(f"✅ API char usage: {final_api_total} / {API_SOFT_LIMIT} ({efficiency_api:.1f}% api vs soft)")
+    print(f"✅ Remaining API space: {soft_headroom} chars (soft), {hard_headroom} chars (hard)")
+    print(f"\n📋 FINAL TAG LIST:")
+    print(f"   Fixed: {', '.join(final_tags[:len(fixed_tags)])}")
+    if len(final_tags) > len(fixed_tags):
+        dynamic_preview = final_tags[len(fixed_tags):len(fixed_tags)+15]
+        remaining = len(final_tags) - len(fixed_tags) - len(dynamic_preview)
+        if remaining > 0:
+            print(f"   Dynamic: {', '.join(dynamic_preview)}... (+{remaining} more)")
+        else:
+            print(f"   Dynamic: {', '.join(dynamic_preview)}")
+    print(f"\n⚠️  Note: Soft cap {API_SOFT_LIMIT} chars enforced to avoid YouTube invalidTags (hard limit {API_MAX_CHARS}).")
+    print(f"{'='*60}\n")
 
     # Use final tags
     tags = final_tags

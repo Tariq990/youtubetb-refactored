@@ -34,7 +34,7 @@ def _load_prompts() -> dict:
     # look under config/prompts.json relative to repo
     try:
         here = Path(__file__).resolve()
-        repo = here.parents[2]
+        repo = here.parents[3]  # Fixed: was parents[2], should be parents[3]
         p = repo / "config" / "prompts.json"
         if p.exists():
             data = json.loads(p.read_text(encoding="utf-8"))

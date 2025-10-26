@@ -332,23 +332,30 @@ def _group_segments_into_chapters(segments: list[dict], total_duration: float, t
     Returns: [{"start": 0.0, "segments": [seg1, seg2, ...]}, ...]
     """
     if not segments:
+        print("[metadata] ⚠️ No segments to group into chapters")
         return []
+
+    print(f"[metadata] Grouping {len(segments)} segments into ~{target_chapters} chapters")
+    print(f"[metadata] Total duration: {total_duration:.1f}s ({int(total_duration//60)}:{int(total_duration%60):02d})")
 
     # Calculate ideal chapter length
     ideal_chapter_len = total_duration / target_chapters
+    print(f"[metadata] Ideal chapter length: {ideal_chapter_len:.1f}s")
 
     grouped = []
 
     # First chapter ALWAYS starts at 0:00 (YouTube requirement)
     current_group = {"start": 0.0, "segments": []}
     current_duration = 0.0
+    skipped_count = 0
 
-    for seg in segments:
+    for i, seg in enumerate(segments):
         seg_duration = seg.get("duration", 0.0)
         seg_start = seg.get("start", 0.0)
 
         # Skip segments beyond total duration
         if seg_start >= total_duration:
+            skipped_count += 1
             continue
 
         # Start new chapter if current one is long enough
@@ -373,6 +380,11 @@ def _group_segments_into_chapters(segments: list[dict], total_duration: float, t
     if grouped and grouped[0]["start"] != 0.0:
         grouped[0]["start"] = 0.0
 
+    if skipped_count > 0:
+        print(f"[metadata] ⚠️  Skipped {skipped_count}/{len(segments)} segments (beyond video duration)")
+
+    print(f"[metadata] ✅ Grouped into {len(grouped)} chapters")
+    
     return grouped
 
 
@@ -444,10 +456,35 @@ def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict) -> 
     total_duration = timestamps.get("total_duration", 0.0)
 
     if not segments:
+        print("[metadata] ❌ No segments in timestamps.json")
         return []
+
+    # FIX: If total_duration is 0 or suspiciously small, calculate from segments
+    if total_duration <= 0 or (segments and total_duration < segments[-1].get("start", 0.0)):
+        print(f"[metadata] ⚠️  Invalid total_duration: {total_duration:.1f}s")
+        
+        # Calculate from last segment (start + duration)
+        last_seg = segments[-1]
+        calculated_duration = last_seg.get("start", 0.0) + last_seg.get("duration", 0.0)
+        
+        print(f"[metadata] 🔧 Auto-fixing: Calculated {calculated_duration:.1f}s from segments")
+        total_duration = calculated_duration
+        
+        # Update the dict for next time
+        timestamps["total_duration"] = total_duration
+
+    print(f"[metadata] Timestamp data:")
+    print(f"   • Total segments: {len(segments)}")
+    print(f"   • Total duration: {total_duration:.1f}s")
 
     # Group segments into 8-10 chapters
     grouped = _group_segments_into_chapters(segments, total_duration, target_chapters=8)
+
+    if not grouped:
+        print("[metadata] ❌ No chapters after grouping")
+        return []
+
+    print(f"[metadata] Generated {len(grouped)} chapter groups")
 
     # Build prompt with grouped segments
     segment_texts = []
@@ -602,40 +639,170 @@ def _generate_description_with_timestamps(
     return final_desc
 
 
+MAX_TAG_LENGTH = 30
+MAX_TOTAL_TAG_CHARS = 500
+MIN_TOTAL_TAG_CHARS = 470
+
+FALLBACK_DENSE_TAGS = [
+    "unstoppablegrowthmindset",
+    "exponentialsuccesshabits",
+    "transformationalleadership",
+    "entrepreneurmindsetmastery",
+    "peakperformanceplaybook",
+    "selfmasterybreakthroughs",
+]
+
+
+def _sanitize_tag_text(tag: str, max_len: int = MAX_TAG_LENGTH) -> str:
+    """Normalize a tag to match uploader sanitation rules."""
+    if not tag:
+        return ""
+    cleaned = tag.replace("_", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch.isspace())
+    if len(cleaned) > max_len:
+        truncated = cleaned[:max_len].rstrip()
+        if " " in truncated and len(cleaned) > max_len:
+            without_last_word = truncated.rsplit(" ", 1)[0].strip()
+            if without_last_word:
+                truncated = without_last_word
+        cleaned = truncated
+    return cleaned
+
+
+def _make_compact_tag(base: str, suffix: str = "") -> str:
+    """Create a dense tag by removing spaces and appending a suffix within the length cap."""
+    if not base:
+        return ""
+    compact_root = re.sub(r"\s+", "", base)
+    if not compact_root:
+        return ""
+    available = MAX_TAG_LENGTH - len(suffix)
+    if available <= 0:
+        return ""
+    trimmed_root = compact_root[:available]
+    return f"{trimmed_root}{suffix}"
+
+
+def _build_density_tags(book_title: str, author_name: Optional[str]) -> list[str]:
+    """Generate high-density (no-space) tags for better raw/API efficiency."""
+    density: list[str] = []
+    bt = (book_title or "").strip()
+    an = (author_name or "").strip() if author_name else ""
+
+    if bt:
+        density.extend([
+            _make_compact_tag(bt, "Summary"),
+            _make_compact_tag(bt, "Insights"),
+            _make_compact_tag(bt, "Blueprint"),
+            _make_compact_tag(bt, "Mastery"),
+            _make_compact_tag(bt, "Mindset"),
+        ])
+
+    if an:
+        density.extend([
+            _make_compact_tag(an, "Insights"),
+            _make_compact_tag(an, "Playbook"),
+            _make_compact_tag(an, "Leadership"),
+        ])
+
+    if bt and an:
+        density.extend([
+            _make_compact_tag(f"{bt} {an}", "Strategy"),
+            _make_compact_tag(f"{bt} {an}", "Framework"),
+        ])
+
+    filtered: list[str] = []
+    seen: set[str] = set()
+    for raw in density:
+        sanitized = _sanitize_tag_text(raw)
+        if not sanitized:
+            continue
+        key = sanitized.casefold()
+        if key in seen:
+            continue
+        filtered.append(sanitized)
+        seen.add(key)
+    return filtered
+
+
 def _generate_tags(book_title: str, author_name: Optional[str]) -> list[str]:
-    """Generate basic tags based on book title and author."""
+    """Generate structured base tags from book title and author."""
     bt = (book_title or "").strip()
     an = (author_name or "").strip()
-    # ALWAYS start with InkEcho as first tag (channel branding)
-    tags: list[str] = [
-        "InkEcho",
-        f"{bt}",
-        f"{bt} summary",
-        f"{bt} audiobook",
-    ]
-    if an:
-        tags.extend([
-            f"{bt} BY {an}",
-            f"{an}",
+
+    combo_tags: list[str] = []
+    if bt and an:
+        combo_tags.extend([
+            f"{bt} {an} book summary",
+            f"{bt} {an}",
+            f"{bt} {an} insights",
+            f"{bt} {an} strategy",
         ])
-    # Filter out any empty entries just in case
-    return [t for t in tags if t and t.strip()]
+    if an:
+        combo_tags.extend([
+            an,
+            f"{an} mindset mastery",
+            f"{an} business strategy",
+            f"{an} leadership insights",
+        ])
+    if bt:
+        combo_tags.extend([
+            bt,
+            f"{bt} book summary",
+            f"{bt} key takeaways",
+            f"{bt} lessons explained",
+            f"{bt} success blueprint",
+            f"{bt} growth strategy",
+        ])
+
+    fixed_tags = [
+        "InkEcho",
+        "audiobook",
+        "book summary",
+        "self improvement",
+        "productivity",
+        "personal development",
+        "motivational",
+        "educational",
+        "book review",
+        "self help",
+    ]
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw in combo_tags + fixed_tags:
+        sanitized = _sanitize_tag_text(raw)
+        if not sanitized:
+            continue
+        key = sanitized.casefold()
+        if key in seen:
+            continue
+        ordered.append(sanitized)
+        seen.add(key)
+    return ordered
 
 
-def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompts: dict) -> list[str]:
+def _generate_ai_tags(
+    model,
+    book_title: str,
+    author_name: Optional[str],
+    prompts: dict,
+    target_count: int = 60,
+) -> list[str]:
     """
     Generate AI-powered topic tags using Gemini.
-    Returns 40+ content-related tags without mentioning book/author names.
-    Upload stage will trim to fit 500 char limit automatically.
+    target_count controls how many raw suggestions we request before filtering.
     """
     tpl = prompts.get("tags_template") or (
-        "Give me 40 relevant tags for this book that reflect its content and topic.\n\n"
+        "Give me {count} relevant tags for this book that reflect its content and topic.\n\n"
         "CRITICAL RULES:\n"
         "- Do NOT mention the book title: {book_name}\n"
         "- Do NOT mention the author name: {author_name}\n"
         "- Return ONLY topic-related keywords (e.g., 'personal development', 'success strategies')\n"
-        "- Each tag should be 1-3 words maximum\n"
-        "- Include general AND specific tags\n"
+        "- Provide a mix of lengths: ~1/3 short tags (1-2 words), ~1/3 medium tags (3-4 words), ~1/3 longer phrases (5-6 words)\n"
+        "- Keep every tag under 30 characters after trimming\n"
+        "- Include both broad themes AND specific takeaways\n"
         "- Return as a simple comma-separated list\n\n"
         "Book: {book_name} by {author_name}"
     )
@@ -645,7 +812,11 @@ def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompt
         tpl = "\n".join(tpl)
 
     # Format prompt
-    prompt = tpl.replace("{book_name}", book_title).replace("{author_name}", author_name or "Unknown")
+    prompt = (
+        tpl.replace("{book_name}", book_title)
+        .replace("{author_name}", author_name or "Unknown")
+        .replace("{count}", str(max(target_count, 10)))
+    )
 
     try:
         # Call Gemini
@@ -663,18 +834,196 @@ def _generate_ai_tags(model, book_title: str, author_name: Optional[str], prompt
                     continue
 
                 # Remove leading numbers and dots (e.g., "1. tag" → "tag")
-                import re
                 t = re.sub(r'^\d+[\.\)]\s*', '', t)
 
                 # Skip if still has numbers at start or is too long
-                if t and not t[0].isdigit() and len(t.split()) <= 3:
-                    cleaned_tags.append(t)
+                if t and not t[0].isdigit() and len(t.split()) <= 6:
+                    sanitized = _sanitize_tag_text(t)
+                    if sanitized:
+                        cleaned_tags.append(sanitized)
 
-            return cleaned_tags[:40]  # Max 40 AI tags (will be combined with basic tags and trimmed to 500 chars in upload stage)
+            return cleaned_tags[:target_count]
     except Exception as e:
         print(f"[AI Tags] Error: {e}")
 
     return []
+
+
+def _calc_api_char_count(tags: list[str]) -> int:
+    """Approximate YouTube API character calculation (adds quotes for spaced tags)."""
+    total = 0
+    for tag in tags:
+        total += len(tag)
+        if " " in tag:
+            total += 2  # YouTube wraps tags that contain spaces in quotes
+    return total
+
+
+def _merge_tags(
+    primary: list[str],
+    ai: list[str],
+    density: list[str],
+    book_title: Optional[str],
+    author_name: Optional[str],
+) -> tuple[list[str], int, int]:
+    """Deduplicate and clamp tags while maximizing raw characters under API limit."""
+
+    best_candidates: dict[str, dict] = {}
+    order_counter = 0
+
+    def register(tags: list[str], priority: int) -> None:
+        """Track the best candidate for each sanitized tag."""
+        nonlocal order_counter
+        for raw in tags:
+            sanitized = _sanitize_tag_text(raw)
+            if not sanitized:
+                continue
+            key = sanitized.casefold()
+            api_cost = len(sanitized) + (2 if " " in sanitized else 0)
+            if api_cost <= 0:
+                continue
+            ratio = len(sanitized) / api_cost
+            candidate = {
+                "text": sanitized,
+                "priority": priority,
+                "ratio": ratio,
+                "length": len(sanitized),
+                "order": order_counter,
+            }
+            existing = best_candidates.get(key)
+            if existing:
+                if priority < existing["priority"] or (
+                    priority == existing["priority"]
+                    and (
+                        ratio > existing["ratio"]
+                        or (
+                            ratio == existing["ratio"]
+                            and len(sanitized) > existing["length"]
+                        )
+                        or (
+                            ratio == existing["ratio"]
+                            and len(sanitized) == existing["length"]
+                            and order_counter < existing["order"]
+                        )
+                    )
+                ):
+                    best_candidates[key] = candidate
+            else:
+                best_candidates[key] = candidate
+            order_counter += 1
+
+    must_have_raw = []
+    if book_title:
+        must_have_raw.append(book_title)
+        must_have_raw.append(f"{book_title} book summary")
+    if author_name:
+        must_have_raw.append(author_name)
+    if book_title and author_name:
+        must_have_raw.append(f"{book_title} {author_name}")
+    must_have_raw.extend(["InkEcho", "book summary", "audiobook"])
+
+    must_have: list[str] = []
+    seen_must: set[str] = set()
+    for raw in must_have_raw:
+        sanitized = _sanitize_tag_text(raw)
+        if not sanitized:
+            continue
+        key = sanitized.casefold()
+        if key in seen_must:
+            continue
+        must_have.append(sanitized)
+        seen_must.add(key)
+
+    # Register candidates by priority bucket
+    register(must_have, priority=0)
+    register(primary, priority=1)
+    register(density, priority=2)
+    register(ai, priority=3)
+    register(FALLBACK_DENSE_TAGS, priority=4)
+
+    candidates = list(best_candidates.values())
+    candidates.sort(key=lambda c: (c["priority"], -c["ratio"], -c["length"], c["order"]))
+
+    selected: list[str] = []
+    seen_selected: set[str] = set()
+    raw_total = 0
+    api_total = 0
+
+    def try_add(tag: str) -> bool:
+        nonlocal raw_total, api_total
+        if not tag:
+            return False
+        key = tag.casefold()
+        if key in seen_selected:
+            return True
+        if len(selected) >= 30:
+            return False
+        add_api = len(tag) + (2 if " " in tag else 0)
+        add_raw = len(tag)
+        if api_total + add_api > MAX_TOTAL_TAG_CHARS:
+            return False
+        selected.append(tag)
+        seen_selected.add(key)
+        raw_total += add_raw
+        api_total += add_api
+        return True
+
+    # Ensure must-have tags are included first
+    for tag in must_have:
+        try_add(tag)
+
+    for cand in candidates:
+        if api_total >= MAX_TOTAL_TAG_CHARS or len(selected) >= 30:
+            break
+        try_add(cand["text"])
+
+    # Attempt smart swaps: replace a selected spaced tag with a denser (no-space) candidate
+    # if it increases raw_total while keeping api_total <= MAX_TOTAL_TAG_CHARS.
+    if raw_total < MIN_TOTAL_TAG_CHARS:
+        dense_pool = [c for c in density + FALLBACK_DENSE_TAGS if c and c.casefold() not in seen_selected]
+        # Try best gain swaps first
+        improved = True
+        while improved and raw_total < MIN_TOTAL_TAG_CHARS:
+            improved = False
+            best_gain = 0
+            best_swap = None  # (index_in_selected, dense_candidate, delta_raw, delta_api)
+
+            for i, old in enumerate(selected):
+                if " " not in old:
+                    continue  # only consider replacing spaced tags
+                old_api = len(old) + 2
+                old_raw = len(old)
+
+                for dense in dense_pool:
+                    dense_s = _sanitize_tag_text(dense)
+                    if not dense_s:
+                        continue
+                    if dense_s.casefold() in seen_selected:
+                        continue
+                    new_api = len(dense_s)
+                    new_raw = len(dense_s)
+                    new_api_total = api_total - old_api + new_api
+                    if new_api_total > MAX_TOTAL_TAG_CHARS:
+                        continue
+                    gain = new_raw - old_raw
+                    if gain > best_gain:
+                        best_gain = gain
+                        best_swap = (i, dense_s, gain, new_api - old_api)
+
+            if best_swap and best_gain > 0:
+                idx, dense_text, gain, delta_api = best_swap
+                old_text = selected[idx]
+                # perform swap
+                seen_selected.remove(old_text.casefold())
+                selected[idx] = dense_text
+                seen_selected.add(dense_text.casefold())
+                raw_total += gain
+                api_total += delta_api
+                # remove used dense from pool
+                dense_pool = [d for d in dense_pool if _sanitize_tag_text(d).casefold() != dense_text.casefold()]
+                improved = True
+
+    return selected, raw_total, api_total
 
 
 def _generate_thumbnail_elements(model, book_title: str, author_name: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -796,43 +1145,39 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
 
     # Always try to generate TAGS based on main_title and author_name
 
-    # Generate basic tags (book title + author)
+    # Generate structured base tags (book/author + fixed list)
     basic_tags = _generate_tags(book_name, author)
+    density_tags = _build_density_tags(book_name, author)
 
-    # Generate AI-powered topic tags
-    ai_tags = _generate_ai_tags(model, book_name, author, prompts)
+    # Generate AI-powered topic tags (Gemini)
+    ai_tags = _generate_ai_tags(model, book_name, author, prompts, target_count=60)
 
-    # Combine both: basic tags first, then AI tags
-    all_tags = basic_tags + ai_tags
+    tags, total_raw_chars, total_api_chars = _merge_tags(
+        basic_tags,
+        ai_tags,
+        density_tags,
+        book_name,
+        author,
+    )
 
+    if total_raw_chars < MIN_TOTAL_TAG_CHARS:
+        extra_ai = _generate_ai_tags(model, book_name, author, prompts, target_count=90)
+        if extra_ai:
+            ai_tags.extend(extra_ai)
+            tags, total_raw_chars, total_api_chars = _merge_tags(
+                basic_tags,
+                ai_tags,
+                density_tags,
+                book_name,
+                author,
+            )
 
-    # Remove duplicates while preserving order
-    seen = set()
-    tags = []
-    for tag in all_tags:
-        tag = tag.strip()
-        tag_lower = tag.lower()
-        if not tag or tag_lower in seen:
-            continue
-        # Remove forbidden characters (YouTube: no quotes, no newlines, no commas)
-        tag = re.sub(r'["\n\r,]', '', tag)
-        # Truncate to 30 chars max
-        tag = tag[:30]
-        # Remove if empty after cleaning
-        if not tag:
-            continue
-        seen.add(tag_lower)
-        tags.append(tag)
-
-    # Enforce total tags length <= 500 chars (YouTube API limit)
-    total = 0
-    filtered_tags = []
-    for tag in tags:
-        if total + len(tag) + (1 if filtered_tags else 0) > 500:
-            break
-        filtered_tags.append(tag)
-        total += len(tag) + (1 if filtered_tags else 0)  # +1 for comma/sep
-    tags = filtered_tags
+    if total_raw_chars < MIN_TOTAL_TAG_CHARS:
+        print(
+            f"⚠️ Generated tags total {total_raw_chars} characters (<{MIN_TOTAL_TAG_CHARS}), API chars {total_api_chars}."
+        )
+    else:
+        print(f"✅ Tags length {total_raw_chars} chars (>={MIN_TOTAL_TAG_CHARS}), API chars {total_api_chars}")
 
     # Generate thumbnail elements: hook/sub/image word
     hook, sub, img = _generate_thumbnail_elements(model, book_name, author)

@@ -4,6 +4,13 @@
 اختبار نظام جلب الأغلفة من Amazon مع الكوكيز
 """
 from pathlib import Path
+import sys
+
+# Add repo root to path for imports
+repo_root = Path(__file__).resolve().parents[1]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
 from src.infrastructure.adapters.amazon_cover import get_book_cover_from_amazon
 
 
@@ -17,6 +24,7 @@ def test_amazon_cover_with_cookies():
     
     # كتب للاختبار
     test_books = [
+        ("Zero to One", "Peter Thiel"),
         ("Atomic Habits", "James Clear"),
         ("The 48 Laws of Power", "Robert Greene"),
         ("Think and Grow Rich", "Napoleon Hill"),

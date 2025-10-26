@@ -871,7 +871,7 @@ def generate_thumbnail(
     run_dir: Path,
     titles_json: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 145,  # Spacing between title and subtitle (increased to 145px)
+    subtitle_gap: int = 110,  # Spacing between title and subtitle (reduced to 110px)
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
@@ -1231,12 +1231,56 @@ def generate_thumbnail(
         title_lines = [render_title]
     elif word_count == 3:
         target_lines = 2
-        # Split as 2+1 for better balance
-        title_lines = [" ".join(words[:2]), words[2]]
+        # Split as 1+2 or 2+1 based on word length for better balance
+        # Check if first word is significantly longer
+        if len(words[0]) >= len(words[1]) + len(words[2]):
+            # First word long: 1 + 2
+            title_lines = [words[0], " ".join(words[1:])]
+        else:
+            # Default: 2 + 1 (better visual balance)
+            title_lines = [" ".join(words[:2]), words[2]]
     elif word_count == 4:
-        target_lines = 3
-        # Split as 2+1+1 for better readability with long words
-        title_lines = [" ".join(words[:2]), words[2], words[3]]
+        # Check if words are long (average > 8 chars) → use 3 lines
+        avg_word_len = sum(len(w) for w in words) / len(words)
+        
+        if avg_word_len > 8:
+            # Long words: use 3 lines with balanced distribution
+            target_lines = 3
+            
+            # Try different 3-line splits to find most balanced
+            splits = [
+                (2, 1, 1),  # 2+1+1
+                (1, 2, 1),  # 1+2+1
+                (1, 1, 2),  # 1+1+2
+            ]
+            
+            best_split = (1, 2, 1)  # default
+            min_variance = float('inf')
+            
+            for split in splits:
+                # Calculate character count for each line
+                line1_len = sum(len(words[i]) for i in range(split[0])) + (split[0] - 1)
+                line2_len = sum(len(words[i]) for i in range(split[0], split[0] + split[1])) + (split[1] - 1)
+                line3_len = sum(len(words[i]) for i in range(split[0] + split[1], 4)) + (split[2] - 1)
+                
+                # Calculate variance (lower is more balanced)
+                avg_len = (line1_len + line2_len + line3_len) / 3
+                variance = ((line1_len - avg_len)**2 + (line2_len - avg_len)**2 + (line3_len - avg_len)**2)
+                
+                if variance < min_variance:
+                    min_variance = variance
+                    best_split = split
+            
+            # Apply best split
+            title_lines = [
+                " ".join(words[:best_split[0]]),
+                " ".join(words[best_split[0]:best_split[0] + best_split[1]]),
+                " ".join(words[best_split[0] + best_split[1]:])
+            ]
+        else:
+            # Short/normal words: use 2 lines (2+2)
+            target_lines = 2
+            title_lines = [" ".join(words[:2]), " ".join(words[2:])]
     elif word_count == 5:
         target_lines = 3
         # Split as 2+2+1 for balanced distribution
@@ -1268,9 +1312,42 @@ def generate_thumbnail(
         if word_count <= 2:
             title_lines = [render_title]
         elif word_count == 3:
-            title_lines = [" ".join(words[:2]), words[2]]
+            # Same smart logic as above
+            if len(words[0]) >= len(words[1]) + len(words[2]):
+                title_lines = [words[0], " ".join(words[1:])]
+            else:
+                title_lines = [" ".join(words[:2]), words[2]]
         elif word_count == 4:
-            title_lines = [" ".join(words[:2]), words[2], words[3]]
+            # Check if words are long (average > 8 chars) → use 3 lines
+            avg_word_len = sum(len(w) for w in words) / len(words)
+            
+            if avg_word_len > 8:
+                # Long words: use 3 lines with balanced distribution
+                splits = [(2, 1, 1), (1, 2, 1), (1, 1, 2)]
+                
+                best_split = (1, 2, 1)
+                min_variance = float('inf')
+                
+                for split in splits:
+                    line1_len = sum(len(words[i]) for i in range(split[0])) + (split[0] - 1)
+                    line2_len = sum(len(words[i]) for i in range(split[0], split[0] + split[1])) + (split[1] - 1)
+                    line3_len = sum(len(words[i]) for i in range(split[0] + split[1], 4)) + (split[2] - 1)
+                    
+                    avg_len = (line1_len + line2_len + line3_len) / 3
+                    variance = ((line1_len - avg_len)**2 + (line2_len - avg_len)**2 + (line3_len - avg_len)**2)
+                    
+                    if variance < min_variance:
+                        min_variance = variance
+                        best_split = split
+                
+                title_lines = [
+                    " ".join(words[:best_split[0]]),
+                    " ".join(words[best_split[0]:best_split[0] + best_split[1]]),
+                    " ".join(words[best_split[0] + best_split[1]:])
+                ]
+            else:
+                # Short/normal words: use 2 lines (2+2)
+                title_lines = [" ".join(words[:2]), " ".join(words[2:])]
         elif word_count == 5:
             title_lines = [" ".join(words[:2]), " ".join(words[2:4]), words[4]]
         elif word_count == 6:
@@ -1335,6 +1412,18 @@ def generate_thumbnail(
             ]
             if debug:
                 print(f"[thumb] subtitle split into 2 lines ({len(subtitle_words)} words)")
+            
+            # CRITICAL: Check if any subtitle line is too wide and reduce font size
+            max_sub_line_attempts = 20
+            for attempt in range(max_sub_line_attempts):
+                max_sub_line_width = max(_text_width(subtitle_font, line) for line in subtitle_lines)
+                if max_sub_line_width <= text_area_w:
+                    break  # All subtitle lines fit!
+                # Reduce subtitle font size by 2px
+                ssize = max(40, ssize - 2)  # Lower minimum to 40px for very long text
+                subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
+                if debug and attempt < max_sub_line_attempts - 1:
+                    print(f"[thumb] subtitle line too wide ({max_sub_line_width}px > {text_area_w}px), reducing to {ssize}px")
         else:
             subtitle_lines = [subtitle_text]
     
