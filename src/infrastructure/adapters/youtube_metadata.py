@@ -805,45 +805,70 @@ def _generate_ai_tags(
 2. Each tag MUST be ≤26 characters (STRICT LIMIT)
 3. Target total: 450-495 characters (sum of all tag lengths)
 4. Mix of tag types:
-   - Book/Author combinations (5-7 tags)
-   - SEO keywords (10-12 tags)
-   - Topic tags (8-10 tags)
+   - Book/Author combinations (4-5 tags)
+   - Video format tags (3-4 tags)
+   - SEO keywords (6-8 tags)
+   - Long-tail search tags (4-6 tags)
+   - Topic-specific tags (8-10 tags)
 
 **TAG CATEGORIES:**
 
-A) Must-have tags (include these):
+A) Must-have tags (include these - PRIORITY ORDER for YouTube algorithm):
    - Book title: "{book_title}"
    - Author name: "{author_name or "Unknown"}"
-   - Combined: "{book_title} {author_name or ""}"
+   - Combined (short): Compress book + author without spaces if >26 chars
    - Main keyword: "book summary"
-   - Combined with book: "{book_title} book summary"
    - Brand: "InkEcho"
-   - Format: "audiobook"
 
-B) SEO Keywords (popular search terms):
-   - self improvement
-   - personal development
-   - productivity
-   - motivational
-   - educational
-   - book review
-   - self help
+B) Video Format Tags (describe the video type):
+   - Choose 3-4 from: "narrated summary", "book explained", "audiobook", "animated book summary", "motivational narration", "visual book summary"
+   - Prioritize: "narrated summary" and "book explained" (most searched)
 
-C) Topic-specific tags (related to book content):
-   - Generate 10-15 tags about the book's specific topics, concepts, and key ideas
+C) SEO Keywords (avoid repetition - pick 2-3 from each group):
+   - Self-improvement group: "self improvement" OR "personal development" (pick ONE)
+   - Motivation group: "motivational" OR "inspirational content" (pick ONE)
+   - Learning group: "educational" OR "book review" (pick ONE)
+   - Growth group: "productivity" OR "mindset tips" (pick ONE)
+   - Success group: Add 2-3 from: "success habits", "self discipline", "law of attraction", "mental strength"
+
+D) Long-Tail Search Tags (how people actually search - HIGH PRIORITY):
+   - "how to" + full book name (e.g., "how to think and grow rich")
+   - "how to" + book topic (e.g., "how to use your subconscious")
+   - "{author_name} techniques" (NOT "author explained" - more specific)
+   - "best self help books"
+   - "power of" + key concept
+   - Book category + "audiobook" (e.g., "mindset audiobook")
+
+E) Topic-specific tags (related to book content):
+   - Generate 8-10 tags about the book's specific topics, concepts, and key ideas
    - Use natural language phrases (prefer spaced tags like "habit formation" over "habitformation")
    - Include key concepts, techniques, or quotes from the book
    - Focus on searchable terms people actually type
+   - Examples: "mental programming", "subconscious techniques", "mind power secrets"
+
+**TAG ORDERING STRATEGY (YouTube gives more weight to first tags):**
+1. Book title (most important)
+2. Author name
+3. Compressed book+author (if fits ≤26 chars)
+4. "book summary"
+5. Top format tags (narrated summary, book explained)
+6. Primary SEO keyword (motivational/self improvement)
+7. Secondary SEO keywords
+8. Long-tail search tags (how to...)
+9. Topic-specific tags
+10. Brand (InkEcho) at end
+
+**CRITICAL RULES:**
+- Every tag MUST be ≤26 characters
+- Prefer spaced tags (better SEO) over compressed tags
+- DO NOT use similar tags (e.g., "self help" + "self improvement" + "personal development" - pick 2 max)
+- Include specific book concepts (e.g., for Atomic Habits: "habit stacking", "1 percent better")
+- Add long-tail search phrases that match real user queries
+- Vary tag types to maximize discoverability
 
 **FORMAT:**
 Return ONLY a JSON array of strings, nothing else. Example:
-["tag1", "tag2", "tag3"]
-
-**CRITICAL:**
-- Every tag MUST be ≤26 characters
-- Prefer spaced tags (better SEO) over compressed tags
-- Include specific book concepts (e.g., for Atomic Habits: "habit stacking", "1 percent better")
-- Make tags searchable and relevant to video content"""
+["tag1", "tag2", "tag3"]"""
 
     try:
         # Call Gemini
@@ -1080,10 +1105,13 @@ def _generate_thumbnail_elements(model, book_title: str, author_name: Optional[s
         f"Your task: generate thumbnail elements for a video about the book titled: {book_title}, written by {author}.\n\n"
         "Deliver only:\n\n"
         "Main Hook (2–6 words) → extremely clickable, bold, curiosity-driven, professional, and viral-ready; must reflect the core idea of the book and create intrigue. Avoid violent, exaggerated, or misleading words.\n\n"
-        "Subtitle (3–6 words) → complements the hook, adds immediate value or insight, short and instantly readable, without repeating the hook; should highlight a key lesson or promise.\n\n"
-        "Rules:\n\n"
+        "Subtitle (3–6 words) → complements the hook, adds immediate value or insight, short and instantly readable, MUST be completely different from the hook (no repeated words), should highlight a key lesson or promise.\n\n"
+        "CRITICAL Rules:\n\n"
         "- Return only the text for Main Hook and Subtitle, nothing else.\n"
-        "- Do not include any labels, explanations, interpretations, or extra text.\n"
+        "- Do NOT include any labels, explanations, interpretations, or extra text.\n"
+        "- DO NOT repeat any words between Hook and Subtitle.\n"
+        "- DO NOT use generic words like 'Unlock', 'Master', 'Transform' repeatedly.\n"
+        "- Subtitle MUST provide NEW information, not restate the hook.\n"
         "- Both elements must be ready to use directly on a thumbnail.\n"
         "- Return only one strongest option, fully optimized for a viral, professional thumbnail.\n"
     )
