@@ -904,29 +904,41 @@ def _run_internal(
                     console.print(f"\n[bold yellow]♻️ Book exists but is INCOMPLETE (status: processing)[/bold yellow]")
                     console.print(f"[cyan]Title:[/cyan] {existing.get('main_title')}")
                     console.print(f"[cyan]Author:[/cyan] {existing.get('author_name', 'Unknown')}")
-                    console.print(f"[cyan]Run Folder:[/cyan] {existing.get('run_folder', 'Unknown')}")
-                    console.print(f"\n[cyan]Searching for existing run folder to resume...[/cyan]")
+                    console.print(f"[cyan]Run Folder (DB):[/cyan] {existing.get('run_folder', 'Unknown')}")
 
-                    # Search for old folder by matching book name + author in output.titles.json
+                    # CRITICAL FIX: Use run_folder from database FIRST (most reliable)
                     old_run_folder = None
                     runs_dir = d["root"].parent
-                    for run_folder in runs_dir.iterdir():
-                        if not run_folder.is_dir() or run_folder.name == "latest":
-                            continue
-
-                        old_titles_json = run_folder / "output.titles.json"
-                        if old_titles_json.exists():
-                            try:
-                                old_data = _json.loads(old_titles_json.read_text(encoding="utf-8"))
-                                if (old_data.get("main_title") == book_name and
-                                    old_data.get("author_name") == author_name):
-                                    old_run_folder = run_folder
-                                    console.print(f"[green]✅ Found existing run folder: {run_folder.name}[/green]")
-                                    break
-                            except Exception:
+                    db_run_folder_name = existing.get("run_folder")
+                    
+                    if isinstance(db_run_folder_name, str) and db_run_folder_name.strip():
+                        candidate = runs_dir / db_run_folder_name.strip()
+                        if candidate.exists() and candidate.is_dir():
+                            old_run_folder = candidate
+                            console.print(f"[green]✅ Reusing run folder from database: {candidate.name}[/green]")
+                        else:
+                            console.print(f"[yellow]⚠️  DB run_folder not found on disk: {db_run_folder_name}[/yellow]")
+                    
+                    # Fallback: Search by matching book/author in output.titles.json (if DB path missing)
+                    if old_run_folder is None:
+                        console.print(f"\n[cyan]Searching runs/ for a matching folder (fallback)…[/cyan]")
+                        for run_folder in runs_dir.iterdir():
+                            if not run_folder.is_dir() or run_folder.name == "latest":
                                 continue
 
-                    if old_run_folder:
+                            old_titles_json = run_folder / "output.titles.json"
+                            if old_titles_json.exists():
+                                try:
+                                    old_data = _json.loads(old_titles_json.read_text(encoding="utf-8"))
+                                    if (old_data.get("main_title") == book_name and
+                                        old_data.get("author_name") == author_name):
+                                        old_run_folder = run_folder
+                                        console.print(f"[green]✅ Found existing run folder: {run_folder.name}[/green]")
+                                        break
+                                except Exception:
+                                    continue
+
+                    if old_run_folder is not None:
                         # Delete new temporary folder and use old one
                         console.print(f"[yellow]Deleting temporary new folder: {d['root'].name}[/yellow]")
                         shutil.rmtree(d["root"])
@@ -968,7 +980,7 @@ def _run_internal(
                         # Skip renaming and database update since folder already exists
                         # Continue to pipeline stages below
                     else:
-                        console.print(f"[yellow]⚠️ Could not find old run folder. Starting fresh...[/yellow]\n")
+                        console.print(f"[yellow]⚠️ Could not find any previous run folder. Starting fresh...[/yellow]\n")
                         # Continue with new folder (rename it below)
 
                 elif existing:
@@ -1770,6 +1782,7 @@ def _run_internal(
                     metadata = json.load(f)
 
                 book_name = metadata.get("main_title", "Unknown Book")
+                author_name = metadata.get("author_name", "")
 
                 # Get main video URL
                 main_video_url = f"https://youtube.com/watch?v={video_id}" if video_id else None
@@ -1790,9 +1803,35 @@ def _run_internal(
 
                 short_description += f"#shorts #books #booksummary #{book_name.replace(' ', '')}"
 
-                # Create hook from first sentence
-                hook = short_script.split('.')[0] if '.' in short_script else short_script[:50]
-                short_title = f"{hook[:50]}... - {book_name}"
+                # CRITICAL FIX: Use reliable short title from metadata (not dynamic generation)
+                # Priority: thumbnail_title → main_title → fallback
+                thumbnail_title = metadata.get("thumbnail_title", "").strip()
+                
+                if thumbnail_title and len(thumbnail_title) > 0:
+                    # Use thumbnail_title as base (usually catchy and short)
+                    short_title = f"{thumbnail_title} – {book_name}"
+                else:
+                    # Fallback: Use first sentence from script
+                    hook = short_script.split('.')[0] if '.' in short_script else short_script[:40]
+                    hook = hook.strip() if hook else "Discover"
+                    short_title = f"{hook} – {book_name}"
+                
+                # Ensure title is not empty and not too long (YouTube max: 100 chars)
+                if not short_title or short_title.strip() == "–" or len(short_title) < 10:
+                    # Emergency fallback: Use book + author
+                    if author_name:
+                        short_title = f"{book_name} by {author_name} #shorts"
+                    else:
+                        short_title = f"{book_name} – Book Summary #shorts"
+                
+                # Trim to YouTube's 100-char limit
+                if len(short_title) > 100:
+                    short_title = short_title[:97] + "..."
+                
+                console.print(f"\n[bold cyan]📝 Short Video Metadata:[/bold cyan]")
+                console.print(f"[cyan]Title ({len(short_title)} chars): {short_title}[/cyan]")
+                console.print(f"[cyan]Description: {short_description[:100]}...[/cyan]")
+                console.print(f"[dim]Source: {'thumbnail_title' if thumbnail_title else 'script hook'}[/dim]\n")
 
                 # Create temporary titles JSON for short
                 short_titles_json = d["root"] / "short_titles.json"
@@ -1808,9 +1847,17 @@ def _run_internal(
 
                 with short_titles_json.open("w", encoding="utf-8") as f:
                     json.dump(short_metadata, f, ensure_ascii=False, indent=2)
+                
+                # ✅ Validation: Ensure title is not empty before upload
+                if not short_title or len(short_title.strip()) == 0:
+                    console.print(f"[bold red]❌ CRITICAL: Short title is EMPTY![/bold red]")
+                    console.print(f"[yellow]Metadata dump:[/yellow]")
+                    console.print(f"  thumbnail_title: {metadata.get('thumbnail_title', 'MISSING')}")
+                    console.print(f"  main_title: {book_name}")
+                    console.print(f"  short_script length: {len(short_script)} chars")
+                    raise ValueError("Short title cannot be empty - metadata incomplete")
 
-                console.print(f"[cyan]Short Title: {short_title}[/cyan]")
-                console.print(f"[cyan]Short Description: {short_description[:100]}...[/cyan]")
+                console.print(f"[green]✅ Short metadata validated and saved[/green]")
 
             except Exception as e:
                 console.print(f"[yellow]Failed to prepare short metadata: {e}[/yellow]")

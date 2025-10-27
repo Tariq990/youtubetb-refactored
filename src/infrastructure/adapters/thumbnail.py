@@ -579,12 +579,12 @@ def _calculate_optimal_title_size(
     elif word_count == 4:
         size *= scaling.get("4_words", 1.7)
     elif word_count == 5:
-        size *= scaling.get("5_words", 1.0)
+        size *= scaling.get("5_words", 0.40)  # Much smaller for 5 words (was 0.60→0.50→0.40)
     elif word_count == 6:
-        size *= scaling.get("6_words", 0.95)
+        size *= scaling.get("6_words", 0.70)  # Adjusted to 0.70 (smaller for 6 words)
     else:
-        # Exponential decay for long titles - FONT-SPECIFIC decay rate!
-        decay_rate = scaling.get("decay_rate", 0.92)
+        # Exponential decay for long titles (7+ words) - FONT-SPECIFIC decay rate!
+        decay_rate = scaling.get("decay_rate", 0.88)  # Stronger decay (was 0.92)
         decay = decay_rate ** (word_count - 6)
         size *= decay
 
@@ -600,7 +600,12 @@ def _calculate_optimal_title_size(
 
     # Apply golden ratio for final aesthetic touch - MODIFIED to favor longer words
     # Don't divide by golden_ratio for already moderate sizes (allow bigger text)
-    size = size / golden_ratio if size > 250 else size * golden_ratio * 0.8  # Changed threshold from 200 to 250
+    # BUT: For 5+ word titles, skip golden ratio boost to keep them small
+    if word_count >= 5:
+        # Skip golden ratio for long titles - keep them small
+        pass
+    else:
+        size = size / golden_ratio if size > 250 else size * golden_ratio * 0.8  # Changed threshold from 200 to 250
 
     # Ensure size is within FONT-SPECIFIC dynamic range
     return int(max(min_size, min(max_size, size)))
@@ -910,11 +915,11 @@ def generate_thumbnail(
     run_dir: Path,
     titles_json: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 110,  # Spacing between title and subtitle (reduced to 110px)
+    subtitle_gap: int = 70,  # Spacing between title and subtitle (reduced from 110px to 70px)
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
-    subtitle_font_size: int = 160,  # Doubled from 80
+    subtitle_font_size: int = 200,  # Increased from 160 to 200 (larger subtitle)
     icons_size: int = 28,
     icons_gap: int = 24,
     icons_row_gap: int = 36,
@@ -1407,10 +1412,10 @@ def generate_thumbnail(
 
     # SUBTITLE AUTO-SCALING: Ensure subtitle fits and is always smaller than main title
     if subtitle:
-        # First, ensure subtitle is never bigger than 70% of final title size
-        # BUT never smaller than 100px for readability (reduced from 240px)
-        max_subtitle_size = int(tsize * 0.70)  # 70% of main title (was 50%)
-        min_subtitle_size = 100  # Minimum size for readability (reduced from 240px)
+        # BALANCED MODE: Subtitle nearly same size as title for visual equilibrium
+        # Subtitle = 90% of title size (was 80%) - almost equal but title still dominant
+        max_subtitle_size = int(tsize * 0.90)  # 90% of main title (increased from 80%)
+        min_subtitle_size = 180  # Minimum size for strong visibility (increased from 140px)
         ssize = max(min_subtitle_size, min(ssize, max_subtitle_size))
         subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
 
@@ -1441,6 +1446,12 @@ def generate_thumbnail(
             print(f"[thumb] title lines: {len(title_lines)} | line_gap: {line_gap}px")
         except Exception:
             pass
+    
+    # DYNAMIC subtitle gap based on word count (smaller gap for 5+ word titles)
+    if word_count >= 5:
+        dynamic_subtitle_gap = 50  # Smaller gap for long titles (was 70px)
+    else:
+        dynamic_subtitle_gap = subtitle_gap  # Use default (70px) for short titles
     
     # Process subtitle: split into 2 lines if 3+ words (first line = 2 words, rest on second line)
     subtitle_lines = []
@@ -1473,10 +1484,10 @@ def generate_thumbnail(
             if debug:
                 print(f"[thumb] subtitle single line: '{subtitle_text}' ({len(subtitle_words)} words)")
     
-    # UNIFIED SPACING: 110px for all subtitles (single-line and multi-line)
-    sub_gap_before = int(max(0, subtitle_gap)) if subtitle else 0  # Use consistent 110px gap
+    # DYNAMIC SPACING: Use smaller gap (50px) for 5+ word titles, default (70px) for others
+    sub_gap_before = int(max(0, dynamic_subtitle_gap)) if subtitle else 0
     if debug and subtitle:
-        print(f"[thumb] subtitle gap: {subtitle_gap}px (lines: {len(subtitle_lines)})")
+        print(f"[thumb] subtitle gap: {dynamic_subtitle_gap}px (lines: {len(subtitle_lines)}) | word_count: {word_count}")
 
     # Compute total block height: sum of title line heights + gaps + subtitle height (if any)
     title_heights = [
@@ -1667,11 +1678,11 @@ def main(
     titles_json: Path,
     run_dir: Path,
     output_path: Optional[Path] = None,
-    subtitle_gap: int = 110,  # Fixed: Match generate_thumbnail() default (was 20)
+    subtitle_gap: int = 70,  # Reduced from 110px to 70px (closer spacing)
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
-    subtitle_font_size: int = 80,
+    subtitle_font_size: int = 200,  # Increased from 80 to 200 (larger subtitle)
     icons_size: int = 28,
     icons_gap: int = 24,
     icons_row_gap: int = 36,
@@ -1733,7 +1744,7 @@ if __name__ == "__main__":
     p.add_argument("--run", dest="run_dir", default="runs/latest", help="Run directory")
     p.add_argument("--titles", dest="titles_json", default=None, help="Path to output.titles.json (defaults to <run>/output.titles.json)")
     p.add_argument("--out", dest="output_path", default=None, help="Output thumbnail path (defaults to <run>/thumbnail.jpg)")
-    p.add_argument("--gap", dest="subtitle_gap", type=int, default=110, help="Vertical gap in pixels between title block and subtitle (default: 110)")
+    p.add_argument("--gap", dest="subtitle_gap", type=int, default=70, help="Vertical gap in pixels between title block and subtitle (default: 70)")
     p.add_argument("--title-line-gap", dest="title_line_gap", type=int, default=40, help="Vertical gap between lines of the main title (default: 40)")
     p.add_argument("--title-size", dest="title_font_size", type=int, default=250, help="Main title font size in pixels (default: 250)")
     p.add_argument("--auto-title-size", dest="dynamic_title_size", action="store_true", default=True, help="Dynamically size title based on word count and text length. Sizes range 100-220px. Use --no-auto-title-size to disable.")

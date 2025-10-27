@@ -401,7 +401,29 @@ def upload_video(
         if debug:
             print("[upload] titles_json missing or invalid:", titles_json)
         return None
+    
+    # CRITICAL: Validate title before processing (YouTube requires non-empty title)
     title = meta.get("youtube_title") or meta.get("main_title")
+    
+    if not title or not title.strip():
+        print("\n" + "="*60)
+        print("❌ CRITICAL ERROR: Empty or missing video title!")
+        print("="*60)
+        print(f"📂 Metadata file: {titles_json}")
+        print(f"❌ youtube_title: {repr(meta.get('youtube_title', 'MISSING'))}")
+        print(f"❌ main_title: {repr(meta.get('main_title', 'MISSING'))}")
+        print("\n🔍 Full metadata dump:")
+        import json as _dump_json
+        print(_dump_json.dumps(meta, ensure_ascii=False, indent=2))
+        print("="*60)
+        raise ValueError("YouTube upload requires a non-empty title. Check output.titles.json or short_titles.json")
+    
+    # Trim title to YouTube's 100-char limit
+    if len(title) > 100:
+        original_title = title
+        title = title[:97] + "..."
+        print(f"⚠️  Title trimmed: {len(original_title)} → {len(title)} chars")
+    
     description = meta.get("youtube_description") or ""
 
     tags: List[str] = meta.get("TAGS") or []
