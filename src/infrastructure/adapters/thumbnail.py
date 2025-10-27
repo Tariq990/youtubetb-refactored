@@ -564,14 +564,14 @@ def _calculate_optimal_title_size(
     # Base size using geometric scaling
     # Size inversely proportional to density and word count
     geometric_factor = max_width / (density * avg_word_len * word_count ** 0.5)
-    size = base_size * geometric_factor * 0.075  # Increased from 0.070 to 0.075 for slightly bigger sizes
+    size = base_size * geometric_factor * 0.15  # Increased from 0.075 to 0.15 for MUCH bigger sizes
 
     # Word count adjustments with exponential decay - FONT-SPECIFIC!
     if word_count <= 2:
         size *= scaling.get("2_words", 1.6)
     elif word_count == 3:
         if avg_word_len > 7:
-            size *= scaling.get("3_words_long", 2.0)  # Increased from 1.8 to 2.0
+            size *= scaling.get("3_words_long", 5.0)  # VERY big for long words (was 3.5)
         elif avg_word_len > 5:
             size *= scaling.get("3_words_medium", 1.9)  # Increased from 1.7 to 1.9
         else:
@@ -579,9 +579,9 @@ def _calculate_optimal_title_size(
     elif word_count == 4:
         size *= scaling.get("4_words", 1.7)
     elif word_count == 5:
-        size *= scaling.get("5_words", 0.40)  # Much smaller for 5 words (was 0.60→0.50→0.40)
+        size *= scaling.get("5_words", 0.30)  # Much smaller for 5 words (reduced from 0.40 to 0.30)
     elif word_count == 6:
-        size *= scaling.get("6_words", 0.70)  # Adjusted to 0.70 (smaller for 6 words)
+        size *= scaling.get("6_words", 0.60)  # Smaller for 6 words (reduced from 0.70 to 0.60)
     else:
         # Exponential decay for long titles (7+ words) - FONT-SPECIFIC decay rate!
         decay_rate = scaling.get("decay_rate", 0.88)  # Stronger decay (was 0.92)
@@ -919,7 +919,8 @@ def generate_thumbnail(
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
-    subtitle_font_size: int = 200,  # Increased from 160 to 200 (larger subtitle)
+    subtitle_font_size: int = 180,  # Default subtitle size (user wanted even bigger)
+    subtitle_max_size: int = 180,   # Hard cap for subtitle font size (in pixels)
     icons_size: int = 28,
     icons_gap: int = 24,
     icons_row_gap: int = 36,
@@ -1261,9 +1262,15 @@ def generate_thumbnail(
         print(f"[thumb] KEEPING LARGE SIZE for short title: {tsize}px (dynamic sizing skipped)")
 
     try:
-        ssize = max(38, int(subtitle_font_size))
+        # Allow very small subtitle sizes; user requested 30px cap
+        ssize = max(12, int(subtitle_font_size))
     except Exception:
-        ssize = font_profile["subtitle_base_size"]  # Use profile default
+        ssize = int(font_profile.get("subtitle_base_size", 80))  # Use profile default
+    # Enforce explicit maximum subtitle size (user requested small subtitles)
+    try:
+        ssize = min(int(subtitle_max_size), ssize)
+    except Exception:
+        pass
     subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
     title_font = _load_font(tsize, title_font_cands, strict=strict_fonts, role="title", debug=debug)
 
@@ -1279,15 +1286,20 @@ def generate_thumbnail(
         target_lines = 1
         title_lines = [render_title]
     elif word_count == 3:
-        target_lines = 2
-        # Split as 1+2 or 2+1 based on word length for better balance
-        # Check if first word is significantly longer
-        if len(words[0]) >= len(words[1]) + len(words[2]):
-            # First word long: 1 + 2
-            title_lines = [words[0], " ".join(words[1:])]
+        # Smart: 3 lines ONLY for long words (avg > 10 chars), else 2 lines
+        avg_word_len = sum(len(w) for w in words) / len(words)
+        
+        if avg_word_len > 10:
+            # Long words (e.g., "Transformational Systematic Excellence"): 3 lines
+            target_lines = 3
+            title_lines = [words[0], words[1], words[2]]
         else:
-            # Default: 2 + 1 (better visual balance)
-            title_lines = [" ".join(words[:2]), words[2]]
+            # Medium/short words (e.g., "Master Better Habits"): 2 lines
+            target_lines = 2
+            if len(words[0]) >= len(words[1]) + len(words[2]):
+                title_lines = [words[0], " ".join(words[1:])]
+            else:
+                title_lines = [" ".join(words[:2]), words[2]]
     elif word_count == 4:
         # Check if words are long (average > 8 chars) → use 3 lines
         avg_word_len = sum(len(w) for w in words) / len(words)
@@ -1361,11 +1373,18 @@ def generate_thumbnail(
         if word_count <= 2:
             title_lines = [render_title]
         elif word_count == 3:
-            # Same smart logic as above
-            if len(words[0]) >= len(words[1]) + len(words[2]):
-                title_lines = [words[0], " ".join(words[1:])]
+            # Smart: 3 lines ONLY for long words (avg > 10 chars), else 2 lines
+            avg_word_len = sum(len(w) for w in words) / len(words)
+            
+            if avg_word_len > 10:
+                # Long words: 3 lines
+                title_lines = [words[0], words[1], words[2]]
             else:
-                title_lines = [" ".join(words[:2]), words[2]]
+                # Medium/short words: 2 lines
+                if len(words[0]) >= len(words[1]) + len(words[2]):
+                    title_lines = [words[0], " ".join(words[1:])]
+                else:
+                    title_lines = [" ".join(words[:2]), words[2]]
         elif word_count == 4:
             # Check if words are long (average > 8 chars) → use 3 lines
             avg_word_len = sum(len(w) for w in words) / len(words)
@@ -1410,13 +1429,16 @@ def generate_thumbnail(
             except Exception:
                 pass
 
-    # SUBTITLE AUTO-SCALING: Ensure subtitle fits and is always smaller than main title
+    # SUBTITLE AUTO-SCALING: Keep subtitle at requested size (do NOT auto-reduce based on title)
     if subtitle:
-        # BALANCED MODE: Subtitle nearly same size as title for visual equilibrium
-        # Subtitle = 90% of title size (was 80%) - almost equal but title still dominant
-        max_subtitle_size = int(tsize * 0.90)  # 90% of main title (increased from 80%)
-        min_subtitle_size = 180  # Minimum size for strong visibility (increased from 140px)
-        ssize = max(min_subtitle_size, min(ssize, max_subtitle_size))
+        # REMOVED: Auto-scaling based on title size - user wants subtitle independent
+        # Just use the requested subtitle size without reducing it
+        # Re-apply explicit global cap if provided
+        try:
+            ssize = min(int(subtitle_max_size), ssize)
+        except Exception:
+            pass
+            pass
         subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
 
         # Then, auto-reduce if subtitle is too wide
@@ -1426,8 +1448,13 @@ def generate_thumbnail(
             sub_width = _text_width(subtitle_font, subtitle_text)
             if sub_width <= text_area_w:
                 break  # Subtitle fits!
-            # Reduce subtitle font size by 2px
-            ssize = max(20, ssize - 2)
+            # Reduce subtitle font size by 2px (allow small sizes)
+            ssize = max(12, ssize - 2)
+            # Respect global cap
+            try:
+                ssize = min(int(subtitle_max_size), ssize)
+            except Exception:
+                pass
             subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
             if debug and attempt < max_sub_attempts - 1:
                 print(f"[thumb] subtitle too wide ({sub_width}px > {text_area_w}px), reducing to {ssize}px")
@@ -1435,7 +1462,7 @@ def generate_thumbnail(
         if debug:
             try:
                 final_sub_width = _text_width(subtitle_font, subtitle_text)
-                print(f"[thumb] subtitle: {ssize}px ({final_sub_width}px wide) | title: {tsize}px | ratio: {(ssize/tsize)*100:.0f}% | min: {min_subtitle_size}px")
+                print(f"[thumb] subtitle: {ssize}px ({final_sub_width}px wide) | title: {tsize}px | ratio: {(ssize/tsize)*100:.0f}%")
             except Exception:
                 pass
 
@@ -1453,19 +1480,21 @@ def generate_thumbnail(
     else:
         dynamic_subtitle_gap = subtitle_gap  # Use default (70px) for short titles
     
-    # Process subtitle: split into 2 lines if 3+ words (first line = 2 words, rest on second line)
+    # Process subtitle: ALWAYS split into 2 lines - first line gets 2 words, rest on second line
     subtitle_lines = []
     if subtitle:
         subtitle_text = str(subtitle)
         subtitle_words = subtitle_text.split()
-        if len(subtitle_words) >= 3:
-            # Split into 2 lines - first line gets 2 words, rest on second line
+        if len(subtitle_words) >= 2:
+            # FORCED: Always split into 2 lines - first 2 words, then rest
             subtitle_lines = [
                 " ".join(subtitle_words[:2]),  # First 2 words
-                " ".join(subtitle_words[2:])   # Remaining words
+                " ".join(subtitle_words[2:]) if len(subtitle_words) > 2 else ""  # Remaining words (or empty)
             ]
+            # Remove empty line if only 2 words total
+            subtitle_lines = [line for line in subtitle_lines if line.strip()]
             if debug:
-                print(f"[thumb] subtitle split into 2 lines: '{subtitle_lines[0]}' / '{subtitle_lines[1]}' ({len(subtitle_words)} words)")
+                print(f"[thumb] subtitle FORCED split into 2 lines: '{subtitle_lines[0]}' / '{subtitle_lines[1] if len(subtitle_lines) > 1 else ''}' ({len(subtitle_words)} words)")
             
             # CRITICAL: Check if any subtitle line is too wide and reduce font size
             max_sub_line_attempts = 20
@@ -1473,13 +1502,18 @@ def generate_thumbnail(
                 max_sub_line_width = max(_text_width(subtitle_font, line) for line in subtitle_lines)
                 if max_sub_line_width <= text_area_w:
                     break  # All subtitle lines fit!
-                # Reduce subtitle font size by 2px
-                ssize = max(40, ssize - 2)  # Lower minimum to 40px for very long text
+                # Reduce subtitle font size by 2px (allow small sizes)
+                ssize = max(12, ssize - 2)
+                # Respect global cap
+                try:
+                    ssize = min(int(subtitle_max_size), ssize)
+                except Exception:
+                    pass
                 subtitle_font = _load_font(ssize, sub_font_cands, strict=strict_fonts, role="sub", debug=debug)
                 if debug and attempt < max_sub_line_attempts - 1:
                     print(f"[thumb] subtitle line too wide ({max_sub_line_width}px > {text_area_w}px), reducing to {ssize}px")
         else:
-            # 1-2 words: keep on single line
+            # Only 1 word: keep on single line
             subtitle_lines = [subtitle_text]
             if debug:
                 print(f"[thumb] subtitle single line: '{subtitle_text}' ({len(subtitle_words)} words)")
@@ -1682,7 +1716,8 @@ def main(
     title_line_gap: int = 40,
     background_dim: float = 0.45,
     title_font_size: int = 250,
-    subtitle_font_size: int = 200,  # Increased from 80 to 200 (larger subtitle)
+    subtitle_font_size: int = 180,  # Default subtitle size in main wrapper
+    subtitle_max_size: int = 180,   # Global cap for subtitle size (main wrapper)
     icons_size: int = 28,
     icons_gap: int = 24,
     icons_row_gap: int = 36,
@@ -1714,6 +1749,7 @@ def main(
         background_dim=background_dim,
         title_font_size=title_font_size,
         subtitle_font_size=subtitle_font_size,
+    subtitle_max_size=subtitle_max_size,
         icons_size=icons_size,
         icons_gap=icons_gap,
         icons_row_gap=icons_row_gap,
@@ -1749,7 +1785,8 @@ if __name__ == "__main__":
     p.add_argument("--title-size", dest="title_font_size", type=int, default=250, help="Main title font size in pixels (default: 250)")
     p.add_argument("--auto-title-size", dest="dynamic_title_size", action="store_true", default=True, help="Dynamically size title based on word count and text length. Sizes range 100-220px. Use --no-auto-title-size to disable.")
     p.add_argument("--no-auto-title-size", dest="dynamic_title_size", action="store_false")
-    p.add_argument("--sub-size", dest="subtitle_font_size", type=int, default=80, help="Subtitle font size in pixels (default: 80)")
+    p.add_argument("--sub-size", dest="subtitle_font_size", type=int, default=180, help="Subtitle font size in pixels (default: 180)")
+    p.add_argument("--sub-max-size", dest="subtitle_max_size", type=int, default=180, help="Maximum subtitle font size in pixels (default: 180)")
     p.add_argument("--icons-size", dest="icons_size", type=int, default=28, help="Player icons size (height/width) in pixels (default: 28)")
     p.add_argument("--icons-gap", dest="icons_gap", type=int, default=24, help="Gap between icons in pixels (default: 24)")
     p.add_argument("--icons-row-gap", dest="icons_row_gap", type=int, default=36, help="Vertical gap between subtitle and icons row (default: 36)")
