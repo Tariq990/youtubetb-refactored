@@ -1042,7 +1042,7 @@ def _merge_tags(
     register(ai, priority=1)           # AI tags now priority 1 (higher)
     register(density, priority=2)      # Density tags priority 2
     register(primary, priority=3)      # Old basic tags now priority 3 (lower)
-    register(FALLBACK_DENSE_TAGS, priority=4)
+    # REMOVED: FALLBACK_DENSE_TAGS - AI tags are comprehensive enough
 
     candidates = list(best_candidates.values())
     candidates.sort(key=lambda c: (c["priority"], -c["ratio"], -c["length"], c["order"]))
@@ -1083,7 +1083,8 @@ def _merge_tags(
     # Attempt smart swaps: replace a selected spaced tag with a denser (no-space) candidate
     # if it increases raw_total while keeping api_total <= MAX_TOTAL_TAG_CHARS.
     if raw_total < MIN_TOTAL_TAG_CHARS:
-        dense_pool = [c for c in density + FALLBACK_DENSE_TAGS if c and c.casefold() not in seen_selected]
+        dense_pool = [c for c in density if c and c.casefold() not in seen_selected]
+        # REMOVED: FALLBACK_DENSE_TAGS from pool - only use density tags from book content
         # Try best gain swaps first
         improved = True
         while improved and raw_total < MIN_TOTAL_TAG_CHARS:
