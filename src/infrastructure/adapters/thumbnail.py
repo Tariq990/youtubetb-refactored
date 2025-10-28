@@ -719,8 +719,13 @@ def _get_average_color_in_area(image: Image.Image, x: int, y: int, width: int, h
 
 def _extract_accent_color_from_cover(cover_path: Path, debug: bool = False) -> Optional[Tuple[int, int, int]]:
     """
-    Extract a vibrant accent color from the book cover image.
-    Uses color clustering to find the most saturated, vibrant color.
+    Extract a vibrant accent color from book cover with smart enhancement.
+    
+    Process:
+    1. Analyze cover and find vibrant MEDIUM-range colors (not too dark/light)
+    2. Boost saturation slightly for better visibility
+    3. Return enhanced color that harmonizes with design
+    
     Returns RGB tuple or None if extraction fails.
     """
     try:
@@ -734,52 +739,77 @@ def _extract_accent_color_from_cover(cover_path: Path, debug: bool = False) -> O
         # Get all pixels
         pixels = list(img.getdata())
 
-        # Filter out very dark, very light, gray colors, and whites
+        # Filter for MEDIUM-range vibrant colors (balanced, not extremes)
         vibrant_pixels = []
         for r, g, b in pixels:
-            # Skip very dark (too close to black)
-            if r < 30 and g < 30 and b < 30:
+            # ✅ Accept medium-to-dark (not pitch black)
+            # Changed: 30 -> 40 (slightly lighter minimum)
+            if r < 40 and g < 40 and b < 40:
                 continue
-            # Skip whites and very light colors (more strict)
-            # White = RGB(255,255,255), so reject anything close
-            if r > 220 and g > 220 and b > 220:
+                
+            # ✅ Accept medium-to-light (not pure white)
+            # Changed: 220 -> 210 (slightly more strict)
+            if r > 210 and g > 210 and b > 210:
                 continue
-            # Additional check: reject if average > 200 (catches off-whites)
+            
+            # ✅ Prefer medium brightness range (avoid extremes)
             avg = (r + g + b) / 3
-            if avg > 200:
+            if avg < 50 or avg > 200:  # NEW: reject very dark AND very light
                 continue
-            # Skip grays (low saturation)
+                
+            # ✅ Accept moderately saturated colors
+            # Changed: 0.3 -> 0.25 (allow slightly less saturated colors)
             h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-            if s < 0.3:  # Low saturation = grayish
+            if s < 0.25:  # Low saturation = grayish
                 continue
-            # Keep vibrant colors
+                
+            # ✅ Keep balanced vibrant colors
             vibrant_pixels.append((r, g, b))
 
         if not vibrant_pixels:
             if debug:
-                print("[thumb] no vibrant colors found in cover, using default gold")
+                print("[thumb] no medium vibrant colors found in cover")
             return None
 
-        # Find most common vibrant color
+        # Find most common vibrant colors (increased from 10 to 15)
         color_counts = Counter(vibrant_pixels)
-        most_common = color_counts.most_common(10)  # Top 10 colors
+        most_common = color_counts.most_common(15)  # Top 15 colors for better selection
 
-        # Pick the most saturated one from top candidates
+        # Pick color with BALANCED saturation and brightness (not just highest)
         best_color = None
-        best_saturation = 0
+        best_score = 0
         for color, count in most_common:
             r, g, b = color
             h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-            # Prefer colors with high saturation and reasonable brightness
-            score = s * (0.3 + v * 0.7)  # Weight both saturation and brightness
-            if score > best_saturation:
-                best_saturation = score
+            
+            # NEW FORMULA: Balance saturation (40%) + brightness (30%) + popularity (30%)
+            # Prefer colors that are: saturated enough, visible, and common in design
+            popularity_score = count / len(vibrant_pixels)  # Normalize by total
+            score = (s * 0.4) + (v * 0.3) + (popularity_score * 100 * 0.3)
+            
+            if score > best_score:
+                best_score = score
                 best_color = color
 
-        if best_color and debug:
+        if not best_color:
+            return None
+            
+        # 🎨 ENHANCEMENT: Boost saturation by 20% for better visibility
+        r, g, b = best_color
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        
+        # Increase saturation (capped at 1.0)
+        s_boosted = min(1.0, s * 1.2)  # +20% saturation
+        
+        # Convert back to RGB
+        r_new, g_new, b_new = colorsys.hsv_to_rgb(h, s_boosted, v)
+        enhanced_color = (int(r_new * 255), int(g_new * 255), int(b_new * 255))
+        
+        if debug:
             print(f"[thumb] extracted accent color from cover: RGB{best_color}")
+            print(f"[thumb] enhanced (+20% saturation): RGB{enhanced_color}")
 
-        return best_color
+        return enhanced_color  # Return ENHANCED color (not original)
 
     except Exception as e:
         if debug:
@@ -862,8 +892,10 @@ def generate_thumbnail(
     # Background: blur/scale cover or gradient
     cover_path = _find_cover(run_dir, debug=debug)
 
-    # NOTE: Subtitle color will be chosen from professional palette (line ~1448)
-    # based on contrast analysis - no need to extract from cover here
+    # Extract accent color from cover for subtitle (design-based approach)
+    extracted_subtitle_color = None
+    if cover_path:
+        extracted_subtitle_color = _extract_accent_color_from_cover(cover_path, debug=debug)
 
     # Define resampling filter once for all image operations
     RESAMPLING = getattr(Image, "Resampling", None)
@@ -1418,55 +1450,75 @@ def generate_thumbnail(
         # For subtitle: use professional fixed colors instead of extracted
         # Extracted colors are often unclear or ugly - use curated palette
         PROFESSIONAL_SUBTITLE_COLORS = [
-            (255, 215, 0),    # Gold - classic, always readable
-            (255, 140, 0),    # Dark Orange - warm and vibrant
-            (255, 69, 0),     # Red-Orange - bold and eye-catching
-            (50, 205, 50),    # Lime Green - fresh and energetic
-            (0, 191, 255),    # Deep Sky Blue - modern and clean
-            (147, 112, 219),  # Medium Purple - elegant
-            (255, 20, 147),   # Deep Pink - attention-grabbing
-            (255, 255, 100),  # Bright Yellow - high visibility
+            (255, 107, 107),  # Coral Red - warm, modern, YouTube-style
+            (78, 205, 196),   # Turquoise - fresh, clean, professional
+            (255, 195, 0),    # Amber Gold - premium, eye-catching
+            (129, 236, 236),  # Cyan - tech-modern, clean
+            (255, 159, 243),  # Pink - vibrant, energetic
+            (162, 155, 254),  # Lavender - elegant, soft
+            (255, 234, 167),  # Cream Yellow - warm, readable
+            (99, 205, 218),   # Sky Blue - trustworthy, calm
+            (253, 121, 168),  # Rose Pink - feminine, bold
+            (161, 255, 206),  # Mint Green - fresh, natural
         ]
         
-        # Choose color with VARIETY: Pick from good contrast colors (not just best)
-        # This ensures different books get different colors!
+        # Choose color: PRIORITY = Extracted from cover > Professional palette
         if cover_path:
-            # Find ALL colors with acceptable contrast (≥4.5:1 for WCAG AA)
-            MIN_CONTRAST = 4.5  # WCAG AA standard for normal text
-            good_colors = []
+            MIN_CONTRAST = 4.2  # Slightly relaxed from WCAG AA (4.5) for better color variety
             
-            for color in PROFESSIONAL_SUBTITLE_COLORS:
-                contrast = _calculate_contrast_ratio(color, subtitle_bg_avg)
-                if contrast >= MIN_CONTRAST:
-                    good_colors.append((color, contrast))
+            # Check if extracted color has good contrast
+            if extracted_subtitle_color:
+                extracted_contrast = _calculate_contrast_ratio(extracted_subtitle_color, subtitle_bg_avg)
+                if extracted_contrast >= MIN_CONTRAST:
+                    # Use extracted color - it's from the book design!
+                    subtitle_color = extracted_subtitle_color
+                    if debug:
+                        print(f"[thumb] ✅ using EXTRACTED color from cover: RGB{subtitle_color}, contrast: {extracted_contrast:.2f}:1")
+                        print(f"[thumb] 🎨 color matches book design!")
+                else:
+                    # Extracted color has low contrast, use palette
+                    if debug:
+                        print(f"[thumb] ⚠️ extracted color RGB{extracted_subtitle_color} has low contrast ({extracted_contrast:.2f}:1)")
+                        print(f"[thumb] → falling back to professional palette")
+                    extracted_subtitle_color = None  # Clear it to trigger palette selection
             
-            if good_colors:
-                # Sort by contrast but pick ROTATING color from top candidates
-                good_colors.sort(key=lambda x: x[1], reverse=True)
+            # Fallback: Use professional palette if no extracted color
+            if not extracted_subtitle_color:
+                # Find ALL colors with acceptable contrast (≥4.5:1 for WCAG AA)
+                good_colors = []
                 
-                # Use hash of book name to pick consistent but varied color
-                import hashlib
-                hash_val = int(hashlib.md5(str(meta.get("main_title", "")).encode()).hexdigest()[:8], 16)
-                color_index = hash_val % len(good_colors)
-                
-                subtitle_color, best_contrast = good_colors[color_index]
-                if debug:
-                    print(f"[thumb] {len(good_colors)} colors with contrast ≥{MIN_CONTRAST}:1")
-                    print(f"[thumb] selected color #{color_index+1}/{len(good_colors)}: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
-                    print(f"[thumb] ✅ using professional color palette (variety mode)")
-            else:
-                # Fallback: use best available color even if below threshold
-                best_color = PROFESSIONAL_SUBTITLE_COLORS[0]
-                best_contrast = 0
                 for color in PROFESSIONAL_SUBTITLE_COLORS:
                     contrast = _calculate_contrast_ratio(color, subtitle_bg_avg)
-                    if contrast > best_contrast:
-                        best_contrast = contrast
-                        best_color = color
-                subtitle_color = best_color
-                if debug:
-                    print(f"[thumb] subtitle color: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
-                    print(f"[thumb] ⚠️ low contrast background - using best available")
+                    if contrast >= MIN_CONTRAST:
+                        good_colors.append((color, contrast))
+                
+                if good_colors:
+                    # Sort by contrast but pick ROTATING color from top candidates
+                    good_colors.sort(key=lambda x: x[1], reverse=True)
+                    
+                    # Use hash of book name to pick consistent but varied color
+                    import hashlib
+                    hash_val = int(hashlib.md5(str(meta.get("main_title", "")).encode()).hexdigest()[:8], 16)
+                    color_index = hash_val % len(good_colors)
+                    
+                    subtitle_color, best_contrast = good_colors[color_index]
+                    if debug:
+                        print(f"[thumb] {len(good_colors)} palette colors with contrast ≥{MIN_CONTRAST}:1")
+                        print(f"[thumb] selected color #{color_index+1}/{len(good_colors)}: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
+                        print(f"[thumb] ✅ using professional color palette (variety mode)")
+                else:
+                    # Fallback: use best available color even if below threshold
+                    best_color = PROFESSIONAL_SUBTITLE_COLORS[0]
+                    best_contrast = 0
+                    for color in PROFESSIONAL_SUBTITLE_COLORS:
+                        contrast = _calculate_contrast_ratio(color, subtitle_bg_avg)
+                        if contrast > best_contrast:
+                            best_contrast = contrast
+                            best_color = color
+                    subtitle_color = best_color
+                    if debug:
+                        print(f"[thumb] subtitle color: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
+                        print(f"[thumb] ⚠️ low contrast background - using best available")
         else:
             subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
 
