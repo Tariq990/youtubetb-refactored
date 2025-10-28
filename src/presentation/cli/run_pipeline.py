@@ -827,14 +827,8 @@ def _run_internal(
             except KeyboardInterrupt:
                 sys.exit(1)
     
-    # 🔄 YOUTUBE SYNC: Ensure database.json is up-to-date (syncs from YouTube if empty)
-    console.print("\n[bold cyan]🔄 Database Sync Check[/bold cyan]")
-    try:
-        from src.infrastructure.adapters.database import ensure_database_synced
-        ensure_database_synced()
-    except Exception as e:
-        console.print(f"[yellow]⚠️  Database sync failed: {e}[/yellow]")
-        console.print("[dim]   Continuing with local database (duplicate detection may not work)[/dim]")
+    # ✅ DATABASE ALREADY SYNCED: Done once at pipeline start (line 734)
+    # No need to re-sync here - database is current and shared across all books in batch
 
     # EARLY RENAME: Get official book name from user query and rename folder before any heavy processing
     console.rule("[bold]0) Get Book Metadata & Rename")
