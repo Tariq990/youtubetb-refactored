@@ -392,8 +392,8 @@ def _get_bebas_neue_profile() -> dict:
         "title_base_size": 180,
         "title_min_size": 120,
         "title_max_size": 270,
-        "subtitle_base_size": 100,
-        "subtitle_min_size": 80,
+        "subtitle_base_size": 180,  # INCREASED: Match default subtitle_font_size (was 100)
+        "subtitle_min_size": 120,    # INCREASED: Higher minimum for better readability (was 80)
         "subtitle_ratio": 0.7,
         "dynamic_scaling": {
             "2_words": 2.0,
