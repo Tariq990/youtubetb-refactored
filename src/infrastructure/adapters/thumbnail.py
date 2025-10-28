@@ -1428,22 +1428,45 @@ def generate_thumbnail(
             (255, 255, 100),  # Bright Yellow - high visibility
         ]
         
-        # Choose color based on background to ensure contrast
+        # Choose color with VARIETY: Pick from good contrast colors (not just best)
+        # This ensures different books get different colors!
         if cover_path:
-            # Pick best contrasting color from palette
-            best_color = PROFESSIONAL_SUBTITLE_COLORS[0]  # Default: Gold
-            best_contrast = 0
+            # Find ALL colors with acceptable contrast (≥4.5:1 for WCAG AA)
+            MIN_CONTRAST = 4.5  # WCAG AA standard for normal text
+            good_colors = []
             
             for color in PROFESSIONAL_SUBTITLE_COLORS:
                 contrast = _calculate_contrast_ratio(color, subtitle_bg_avg)
-                if contrast > best_contrast:
-                    best_contrast = contrast
-                    best_color = color
+                if contrast >= MIN_CONTRAST:
+                    good_colors.append((color, contrast))
             
-            subtitle_color = best_color
-            if debug:
-                print(f"[thumb] subtitle color: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
-                print(f"[thumb] ✅ using professional color palette (guaranteed readable)")
+            if good_colors:
+                # Sort by contrast but pick ROTATING color from top candidates
+                good_colors.sort(key=lambda x: x[1], reverse=True)
+                
+                # Use hash of book name to pick consistent but varied color
+                import hashlib
+                hash_val = int(hashlib.md5(str(meta.get("main_title", "")).encode()).hexdigest()[:8], 16)
+                color_index = hash_val % len(good_colors)
+                
+                subtitle_color, best_contrast = good_colors[color_index]
+                if debug:
+                    print(f"[thumb] {len(good_colors)} colors with contrast ≥{MIN_CONTRAST}:1")
+                    print(f"[thumb] selected color #{color_index+1}/{len(good_colors)}: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
+                    print(f"[thumb] ✅ using professional color palette (variety mode)")
+            else:
+                # Fallback: use best available color even if below threshold
+                best_color = PROFESSIONAL_SUBTITLE_COLORS[0]
+                best_contrast = 0
+                for color in PROFESSIONAL_SUBTITLE_COLORS:
+                    contrast = _calculate_contrast_ratio(color, subtitle_bg_avg)
+                    if contrast > best_contrast:
+                        best_contrast = contrast
+                        best_color = color
+                subtitle_color = best_color
+                if debug:
+                    print(f"[thumb] subtitle color: RGB{subtitle_color}, contrast: {best_contrast:.2f}:1")
+                    print(f"[thumb] ⚠️ low contrast background - using best available")
         else:
             subtitle_color = _get_smart_text_color(subtitle_bg_avg, debug=debug)
 
