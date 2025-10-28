@@ -1585,7 +1585,7 @@ def _run_internal(
         thumbnail_title_font = "Bebas Neue"  # Default
         thumbnail_subtitle_font = "Bebas Neue"  # Default
         thumbnail_title_font_size = 150  # Default
-        thumbnail_subtitle_font_size = 60  # Default
+        thumbnail_subtitle_font_size = 180  # INCREASED: Match profile base_size (was 60, way too small)
         try:
             settings_path = config_dir / "settings.json"
             if settings_path.exists():
