@@ -862,13 +862,8 @@ def generate_thumbnail(
     # Background: blur/scale cover or gradient
     cover_path = _find_cover(run_dir, debug=debug)
 
-    # Auto-extract subtitle color from cover if available
-    if cover_path:
-        extracted_color = _extract_accent_color_from_cover(cover_path, debug=debug)
-        if extracted_color:
-            subtitle_color = extracted_color
-            if debug:
-                print(f"[thumb] using auto-extracted subtitle color: {subtitle_color}")
+    # NOTE: Subtitle color will be chosen from professional palette (line ~1448)
+    # based on contrast analysis - no need to extract from cover here
 
     # Define resampling filter once for all image operations
     RESAMPLING = getattr(Image, "Resampling", None)
