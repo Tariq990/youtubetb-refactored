@@ -316,9 +316,35 @@ def process_books_batch(
         "resumed": []
     }
 
+    # Create batch log file
+    batch_log_path = Path.cwd() / "books.txt.log"
+    
+    def log_batch(message: str):
+        """Write to both console and batch log file."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] {message}\n"
+        try:
+            with batch_log_path.open("a", encoding="utf-8") as f:
+                f.write(log_line)
+        except Exception:
+            pass  # Silently ignore log write errors
+    
+    # Initialize log file with header
+    try:
+        with batch_log_path.open("w", encoding="utf-8") as f:
+            f.write("="*70 + "\n")
+            f.write(f"BATCH PROCESSING LOG - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total Books: {len(books)}\n")
+            f.write("="*70 + "\n\n")
+    except Exception:
+        pass
+
     print("\n" + "="*70)
     print(f"🚀 INTELLIGENT BATCH PROCESSING: {len(books)} books")
     print("="*70)
+    print(f"📝 Batch log: {batch_log_path}")
+    
+    log_batch(f"🚀 BATCH STARTED: {len(books)} books")
     
     # Step 0: Ensure database is synced (auto-sync from YouTube if empty)
     _ensure_database_synced()
@@ -372,6 +398,13 @@ def process_books_batch(
         print(f"   Status: {book_status['status']} | Action: {action}")
         print(f"{'='*70}\n")
         
+        # Log book start
+        log_batch(f"\n{'='*50}")
+        log_batch(f"📖 Book {idx}/{total_books}: {title}")
+        if author:
+            log_batch(f"   Author: {author}")
+        log_batch(f"   Status: {book_status['status']} | Action: {action}")
+        
         # Handle based on action
         if action == "skip" and skip_completed:
             # Already done - skip
@@ -383,6 +416,10 @@ def process_books_batch(
                 "youtube_url": book_info.get("youtube_url", ""),
                 "date_added": book_info.get("date_added", "")
             })
+            
+            log_batch(f"⏭️  SKIPPED: Already completed")
+            if book_info.get("youtube_url"):
+                log_batch(f"   YouTube: {book_info['youtube_url']}")
             
             if console:
                 console.print(f"[yellow]⏭️  SKIPPED: Already completed![/yellow]")
@@ -413,11 +450,45 @@ def process_books_batch(
             if console:
                 if action == "resume":
                     console.print(f"[cyan]♻️  RESUMING from last successful stage...[/cyan]")
+                    log_batch("♻️  RESUMING from last successful stage...")
                 else:
                     console.print(f"[green]🚀 PROCESSING from scratch...[/green]")
+                    log_batch("🚀 PROCESSING from scratch...")
             
             print(f"🔧 Running: {' '.join(cmd)}\n")
+            
+            # Monitor pipeline stages from summary.json
+            run_folder = None
+            stage_start_time = time.time()
+            
             result = subprocess.run(cmd, capture_output=False, text=True)
+
+            # Try to read summary.json to log stages
+            try:
+                from src.infrastructure.adapters.database import check_book_exists
+                updated_info = check_book_exists(title, author)
+                if updated_info and updated_info.get("run_folder"):
+                    run_folder_name = updated_info["run_folder"]
+                    summary_path = Path("runs") / run_folder_name / "summary.json"
+                    if summary_path.exists():
+                        import json as _json
+                        with summary_path.open("r", encoding="utf-8") as f:
+                            summary_data = _json.load(f)
+                        
+                        # Log each stage
+                        log_batch("\n   📊 Pipeline Stages:")
+                        for stage in summary_data.get("stages", []):
+                            stage_name = stage.get("name", "unknown")
+                            stage_status = stage.get("status", "unknown")
+                            duration = stage.get("duration_sec", 0)
+                            
+                            if stage_status == "ok":
+                                log_batch(f"      ✅ {stage_name.title()}: PASS ({duration:.1f}s)")
+                            else:
+                                error = stage.get("error", "Unknown error")
+                                log_batch(f"      ❌ {stage_name.title()}: FAIL - {error}")
+            except Exception:
+                pass  # Silently ignore if can't read summary
 
             if result.returncode == 0:
                 # Success - get updated info from database
@@ -436,12 +507,14 @@ def process_books_batch(
                 
                 if action == "resume":
                     results["resumed"].append(result_entry)
+                    log_batch(f"\n✅ SUCCESS (RESUMED): {title}")
                     if console:
                         console.print(f"\n[green]✅ SUCCESS (RESUMED): {title}[/green]")
                     else:
                         print(f"\n✅ SUCCESS (RESUMED): {title}")
                 else:
                     results["success"].append(result_entry)
+                    log_batch(f"\n✅ SUCCESS: {title}")
                     if console:
                         console.print(f"\n[green]✅ SUCCESS: {title}[/green]")
                     else:
@@ -449,8 +522,10 @@ def process_books_batch(
                 
                 if video_url:
                     print(f"   📺 Main Video: {video_url}")
+                    log_batch(f"   📺 Main Video: {video_url}")
                 if short_url:
                     print(f"   🎬 Short: {short_url}")
+                    log_batch(f"   🎬 Short: {short_url}")
                     
             else:
                 # ❌ CRITICAL: Pipeline failed after max retries
@@ -460,27 +535,74 @@ def process_books_batch(
                     "error": f"Pipeline exited with code {result.returncode}"
                 })
                 
-                if console:
-                    console.print(f"\n[red]❌ CRITICAL FAILURE: {title}[/red]")
-                    console.print(f"[dim]   Exit code: {result.returncode}[/dim]")
-                    console.print(f"\n[bold red]🛑 BATCH PIPELINE STOPPED[/bold red]")
-                    console.print(f"[yellow]   Pipeline failed after max retries. Not continuing to next book.[/yellow]")
-                    console.print(f"[dim]   Fix the error and rerun batch processing to resume.[/dim]\n")
-                else:
-                    print(f"\n❌ CRITICAL FAILURE: {title} (exit code {result.returncode})")
-                    print(f"\n🛑 BATCH PIPELINE STOPPED")
-                    print(f"   Pipeline failed after max retries. Not continuing to next book.")
-                    print(f"   Fix the error and rerun batch processing to resume.\n")
+                log_batch(f"\n❌ FAILURE: {title}")
+                log_batch(f"   Exit code: {result.returncode}")
                 
-                # Mark remaining books as skipped
-                for remaining_book in books[idx:]:
-                    results["skipped"].append({
-                        "book": remaining_book,
-                        "reason": "Previous book failed - batch stopped"
-                    })
-                break  # ← CRITICAL: Stop immediately, don't continue
+                if console:
+                    console.print(f"\n[red]❌ FAILURE: {title}[/red]")
+                    console.print(f"[dim]   Exit code: {result.returncode}[/dim]")
+                else:
+                    print(f"\n❌ FAILURE: {title} (exit code {result.returncode})")
+                
+                # Check if we should continue or stop
+                if _BATCH_AUTO_CONTINUE:
+                    # Auto mode: Skip failed book and continue to next
+                    log_batch("   ⚠️  Auto-continue: Moving to next book...")
+                    if console:
+                        console.print(f"[yellow]⚠️  Auto-continue mode: Skipping failed book[/yellow]")
+                        console.print(f"[cyan]   Moving to next book...[/cyan]\n")
+                    else:
+                        print(f"⚠️  Auto-continue mode: Skipping failed book")
+                        print(f"   Moving to next book...\n")
+                    continue  # ← Continue to next book
+                else:
+                    # Manual mode: Ask user what to do
+                    if console:
+                        console.print(f"\n[bold yellow]🛑 BOOK FAILED[/bold yellow]")
+                        console.print(f"[yellow]   What would you like to do?[/yellow]")
+                    else:
+                        print(f"\n🛑 BOOK FAILED")
+                        print(f"   What would you like to do?")
+                    
+                    try:
+                        choice = input("   Continue to next book? (y/n): ").strip().lower()
+                        if choice == 'y':
+                            if console:
+                                console.print(f"[cyan]   Moving to next book...[/cyan]\n")
+                            else:
+                                print(f"   Moving to next book...\n")
+                            continue  # ← Continue to next book
+                        else:
+                            if console:
+                                console.print(f"\n[bold red]🛑 BATCH PIPELINE STOPPED BY USER[/bold red]")
+                                console.print(f"[dim]   Rerun batch processing to resume.[/dim]\n")
+                            else:
+                                print(f"\n🛑 BATCH PIPELINE STOPPED BY USER")
+                                print(f"   Rerun batch processing to resume.\n")
+                            
+                            # Mark remaining books as skipped
+                            for remaining_book in books[idx:]:
+                                results["skipped"].append({
+                                    "book": remaining_book,
+                                    "reason": "User stopped batch after previous failure"
+                                })
+                            break  # ← Stop batch
+                    except (KeyboardInterrupt, EOFError):
+                        if console:
+                            console.print(f"\n[yellow]⚠️  Stopping batch...[/yellow]\n")
+                        else:
+                            print(f"\n⚠️  Stopping batch...\n")
+                        
+                        # Mark remaining books as skipped
+                        for remaining_book in books[idx:]:
+                            results["skipped"].append({
+                                "book": remaining_book,
+                                "reason": "User interrupted"
+                            })
+                        break  # ← Stop batch
 
         except KeyboardInterrupt:
+            log_batch(f"\n⚠️  INTERRUPTED by user at book {idx}/{total_books}")
             if console:
                 console.print(f"\n\n[yellow]⚠️  INTERRUPTED by user at book {idx}/{total_books}[/yellow]")
                 console.print(f"[yellow]   Stopping batch processing...[/yellow]")
@@ -504,26 +626,72 @@ def process_books_batch(
                 "error": str(e)
             })
             
-            if console:
-                console.print(f"\n[red]❌ CRITICAL EXCEPTION: {title}[/red]")
-                console.print(f"[dim]   Error: {e}[/dim]")
-                console.print(f"\n[bold red]🛑 BATCH PIPELINE STOPPED[/bold red]")
-                console.print(f"[yellow]   Unexpected error occurred. Not continuing to next book.[/yellow]")
-                console.print(f"[dim]   Fix the error and rerun batch processing to resume.[/dim]\n")
-            else:
-                print(f"\n❌ CRITICAL EXCEPTION: {title}")
-                print(f"   Error: {e}")
-                print(f"\n🛑 BATCH PIPELINE STOPPED")
-                print(f"   Unexpected error occurred. Not continuing to next book.")
-                print(f"   Fix the error and rerun batch processing to resume.\n")
+            log_batch(f"\n❌ EXCEPTION: {title}")
+            log_batch(f"   Error: {str(e)}")
             
-            # Mark remaining books as skipped
-            for remaining_book in books[idx:]:
-                results["skipped"].append({
-                    "book": remaining_book,
-                    "reason": "Previous book failed - batch stopped"
-                })
-            break  # ← CRITICAL: Stop immediately, don't continue
+            if console:
+                console.print(f"\n[red]❌ EXCEPTION: {title}[/red]")
+                console.print(f"[dim]   Error: {e}[/dim]")
+            else:
+                print(f"\n❌ EXCEPTION: {title}")
+                print(f"   Error: {e}")
+            
+            # Check if we should continue or stop
+            if _BATCH_AUTO_CONTINUE:
+                # Auto mode: Skip failed book and continue to next
+                log_batch("   ⚠️  Auto-continue: Moving to next book...")
+                if console:
+                    console.print(f"[yellow]⚠️  Auto-continue mode: Skipping failed book[/yellow]")
+                    console.print(f"[cyan]   Moving to next book...[/cyan]\n")
+                else:
+                    print(f"⚠️  Auto-continue mode: Skipping failed book")
+                    print(f"   Moving to next book...\n")
+                continue  # ← Continue to next book
+            else:
+                # Manual mode: Ask user what to do
+                if console:
+                    console.print(f"\n[bold yellow]🛑 BOOK FAILED[/bold yellow]")
+                    console.print(f"[yellow]   What would you like to do?[/yellow]")
+                else:
+                    print(f"\n🛑 BOOK FAILED")
+                    print(f"   What would you like to do?")
+                
+                try:
+                    choice = input("   Continue to next book? (y/n): ").strip().lower()
+                    if choice == 'y':
+                        if console:
+                            console.print(f"[cyan]   Moving to next book...[/cyan]\n")
+                        else:
+                            print(f"   Moving to next book...\n")
+                        continue  # ← Continue to next book
+                    else:
+                        if console:
+                            console.print(f"\n[bold red]🛑 BATCH PIPELINE STOPPED BY USER[/bold red]")
+                            console.print(f"[dim]   Rerun batch processing to resume.[/dim]\n")
+                        else:
+                            print(f"\n🛑 BATCH PIPELINE STOPPED BY USER")
+                            print(f"   Rerun batch processing to resume.\n")
+                        
+                        # Mark remaining books as skipped
+                        for remaining_book in books[idx:]:
+                            results["skipped"].append({
+                                "book": remaining_book,
+                                "reason": "User stopped batch after previous failure"
+                            })
+                        break  # ← Stop batch
+                except (KeyboardInterrupt, EOFError):
+                    if console:
+                        console.print(f"\n[yellow]⚠️  Stopping batch...[/yellow]\n")
+                    else:
+                        print(f"\n⚠️  Stopping batch...\n")
+                    
+                    # Mark remaining books as skipped
+                    for remaining_book in books[idx:]:
+                        results["skipped"].append({
+                            "book": remaining_book,
+                            "reason": "User interrupted"
+                        })
+                    break  # ← Stop batch
 
         # Small delay between books to avoid rate limits
         if idx < total_books:
@@ -532,6 +700,46 @@ def process_books_batch(
 
     # Print final summary
     print_final_summary(results)
+    
+    # Write final summary to log
+    log_batch("\n" + "="*70)
+    log_batch("📊 BATCH PROCESSING COMPLETE")
+    log_batch("="*70)
+    log_batch(f"Total books: {results['total']}")
+    log_batch(f"✅ Success (New): {len(results['success'])}")
+    log_batch(f"♻️  Success (Resumed): {len(results['resumed'])}")
+    log_batch(f"❌ Failed: {len(results['failed'])}")
+    log_batch(f"⏭️  Skipped: {len(results['skipped'])}")
+    
+    if results["success"]:
+        log_batch("\n✅ Successfully Processed (New):")
+        for item in results["success"]:
+            log_batch(f"   • {item['book']}")
+            if item.get("youtube_url"):
+                log_batch(f"     {item['youtube_url']}")
+    
+    if results["resumed"]:
+        log_batch("\n♻️  Successfully Resumed:")
+        for item in results["resumed"]:
+            log_batch(f"   • {item['book']}")
+            if item.get("youtube_url"):
+                log_batch(f"     {item['youtube_url']}")
+    
+    if results["failed"]:
+        log_batch("\n❌ Failed Books:")
+        for item in results["failed"]:
+            log_batch(f"   • {item['book']}")
+            log_batch(f"     Error: {item['error']}")
+    
+    if results["skipped"]:
+        log_batch("\n⏭️  Skipped Books:")
+        for item in results["skipped"]:
+            log_batch(f"   • {item.get('book', 'Unknown')}")
+            log_batch(f"     Reason: {item.get('reason', 'Already completed')}")
+    
+    log_batch("\n" + "="*70)
+    log_batch(f"BATCH ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    log_batch("="*70 + "\n")
 
     return results
 

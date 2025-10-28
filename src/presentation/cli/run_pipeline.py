@@ -1189,8 +1189,15 @@ def _run_internal(
                 console.print(f"[yellow]Candidate {idx} transcription failed. Moving to next candidate...[/yellow]")
 
         if not transcript_path:
-            console.print("[red]All candidates failed transcription. Exiting.[/red]")
-            raise typer.Exit(code=2)
+            error_msg = "❌ CRITICAL: All candidates failed transcription"
+            console.print(f"[red]{error_msg}[/red]")
+            summary["stages"].append({
+                "name": "transcribe",
+                "status": "failed",
+                "error": "All candidates failed transcription"
+            })
+            _save_summary(d["root"], summary)  # ← CRITICAL: Save failure
+            raise RuntimeError(error_msg)  # Allow batch to catch and continue to next book
 
     console.rule("[bold]3) Process Script")
 

@@ -187,115 +187,6 @@ def _bebas_neue_candidates(weight: str = "bold") -> List[Path]:
                 pass
     return cands
 
-
-def _cairo_candidates(weight: str = "bold") -> List[Path]:
-    """
-    Search for Cairo font - Modern Arabic/Latin typeface with excellent readability.
-    Perfect for bilingual thumbnails and Arabic-friendly designs.
-    """
-    names_by_weight = {
-        "bold": [
-            "Cairo-Bold.ttf",
-            "CairoBold.ttf",
-            "Cairo-ExtraBold.ttf",
-            "CairoExtraBold.ttf",
-            "Cairo-SemiBold.ttf",
-            "CairoSemiBold.ttf",
-            "Cairo-Regular.ttf",
-        ],
-        "semibold": [
-            "Cairo-SemiBold.ttf",
-            "CairoSemiBold.ttf",
-            "Cairo-Bold.ttf",
-            "Cairo-Regular.ttf",
-        ],
-        "regular": [
-            "Cairo-Regular.ttf",
-            "Cairo.ttf",
-            "Cairo-SemiBold.ttf",
-        ],
-        "light": [
-            "Cairo-Light.ttf",
-            "CairoLight.ttf",
-            "Cairo-Regular.ttf",
-        ],
-    }
-    weight = weight.lower()
-    if weight == "bold":
-        order = names_by_weight.get("bold", []) + names_by_weight.get("semibold", [])
-    elif weight == "semibold":
-        order = names_by_weight.get("semibold", []) + names_by_weight.get("bold", [])
-    elif weight == "light":
-        order = names_by_weight.get("light", []) + names_by_weight.get("regular", [])
-    else:
-        order = names_by_weight.get("regular", []) + names_by_weight.get("semibold", [])
-
-    roots = [
-        Path("assets/fonts"),
-        Path("secrets/fonts"),
-        Path("C:/Windows/Fonts"),
-        Path("/usr/share/fonts"),
-        Path("/Library/Fonts"),
-        Path("/System/Library/Fonts/Supplemental"),
-    ]
-    cands: List[Path] = []
-    for r in roots:
-        try:
-            if not r.exists():
-                continue
-            for name in order:
-                p = r / name
-                if p.exists() and p not in cands:
-                    cands.append(p)
-            # Generic search for any Cairo variant
-            for p in r.glob("Cairo*.ttf"):
-                if p not in cands:
-                    cands.append(p)
-            for p in r.glob("cairo*.ttf"):
-                if p not in cands:
-                    cands.append(p)
-        except Exception:
-            pass
-    return cands
-
-
-def _impact_candidates(weight: str = "bold") -> List[Path]:
-    """
-    Search for Impact font - Bold, condensed display font.
-    Perfect for powerful, attention-grabbing thumbnail titles.
-    """
-    # Impact typically comes in one weight (bold by default)
-    names = [
-        "Impact.ttf",
-        "impact.ttf",
-        "IMPACT.TTF",
-    ]
-    
-    roots = [
-        Path("assets/fonts"),
-        Path("secrets/fonts"),
-        Path("C:/Windows/Fonts"),
-        Path("/usr/share/fonts"),
-        Path("/Library/Fonts"),
-        Path("/System/Library/Fonts/Supplemental"),
-    ]
-    cands: List[Path] = []
-    for r in roots:
-        try:
-            if not r.exists():
-                continue
-            for name in names:
-                p = r / name
-                if p.exists() and p not in cands:
-                    cands.append(p)
-            # Generic search for any Impact variant
-            for p in r.glob("*mpact*.ttf"):
-                if p not in cands:
-                    cands.append(p)
-        except Exception:
-            pass
-    return cands
-
 def _get_smart_text_color(background_rgb: Tuple[int, int, int], debug: bool = False) -> Tuple[int, int, int]:
     """
     Advanced text color selection with wide range of colors.
@@ -492,44 +383,29 @@ def _total_char_count(text: str) -> int:
         return 0
 
 
-def _load_font_profile(font_name: str, config_dir: Path = Path("config")) -> dict:
+def _get_bebas_neue_profile() -> dict:
     """
-    Load font-specific sizing profile from settings.json.
-    Each font can have its own dynamic sizing parameters.
-    
-    Returns default Bebas Neue profile if font not found or error occurs.
+    Hardcoded Bebas Neue font profile - NO config dependency.
+    All sizing parameters are embedded in code for maximum reliability.
     """
-    default_profile = {
-        "title_base_size": 135,
-        "title_min_size": 60,
-        "title_max_size": 220,
-        "subtitle_base_size": 80,
-        "subtitle_min_size": 65,
-        "subtitle_ratio": 0.70,
+    return {
+        "title_base_size": 180,
+        "title_min_size": 120,
+        "title_max_size": 270,
+        "subtitle_base_size": 100,
+        "subtitle_min_size": 80,
+        "subtitle_ratio": 0.7,
         "dynamic_scaling": {
-            "2_words": 1.8,
-            "3_words_long": 0.9,
-            "3_words_medium": 1.2,
-            "3_words_short": 1.5,
-            "4_words": 1.1,
-            "5_words": 1.0,
-            "6_words": 0.95,
-            "decay_rate": 0.92
+            "2_words": 2.0,
+            "3_words_long": 1.2,
+            "3_words_medium": 1.6,
+            "3_words_short": 1.85,
+            "4_words": 1.7,
+            "5_words": 0.70,
+            "6_words": 1.0,
+            "decay_rate": 0.93
         }
     }
-    
-    try:
-        settings_path = config_dir / "settings.json"
-        if not settings_path.exists():
-            return default_profile
-        
-        settings = json.loads(settings_path.read_text(encoding="utf-8"))
-        profiles = settings.get("thumbnail_font_profiles", {})
-        
-        # Return profile for requested font, or default
-        return profiles.get(font_name, default_profile)
-    except Exception:
-        return default_profile
 
 
 def _calculate_optimal_title_size(
@@ -1149,38 +1025,10 @@ def generate_thumbnail(
         title_explicit.append(Path(env_title_font))
     if env_sub_font and Path(env_sub_font).exists():
         sub_explicit.append(Path(env_sub_font))
-    # 3) Family name requests (Bebas Neue, Cairo, and Impact supported)
+    # 3) Family name requests (ONLY Bebas Neue supported - all others removed)
     def family_to_candidates(name: Optional[str], weight_title: str, weight_sub: str) -> Tuple[List[Path], List[Path]]:
-        nt = (name or '').strip().lower()
-        if not nt:
-            return [], []
-        if nt in ("bebas", "bebas neue", "bebas-neue", "bebasneue"):
-            return _bebas_neue_candidates(weight_title), _bebas_neue_candidates(weight_sub)
-        if nt in ("cairo",):
-            return _cairo_candidates(weight_title), _cairo_candidates(weight_sub)
-        if nt in ("impact",):
-            return _impact_candidates(weight_title), _impact_candidates(weight_sub)
-        # Generic search by family substring
-        roots = [
-            Path("assets/fonts"), Path("secrets/fonts"), Path("C:/Windows/Fonts"),
-            Path("/usr/share/fonts"), Path("/Library/Fonts"), Path("/System/Library/Fonts/Supplemental"),
-        ]
-        pat = re.compile(re.escape(nt), re.IGNORECASE)
-        t_c: List[Path] = []
-        s_c: List[Path] = []
-        for r in roots:
-            try:
-                for p in r.glob("*.ttf"):
-                    if pat.search(p.name):
-                        t_c.append(p)
-                        s_c.append(p)
-                for p in r.glob("*.otf"):
-                    if pat.search(p.name):
-                        t_c.append(p)
-                        s_c.append(p)
-            except Exception:
-                pass
-        return t_c, s_c
+        # SIMPLIFIED: Always return Bebas Neue, ignore requested name
+        return _bebas_neue_candidates(weight_title), _bebas_neue_candidates(weight_sub)
 
     fam_t_c_title, _ = family_to_candidates(title_font_name, "bold", "bold")
     _, fam_s_c_sub = family_to_candidates(sub_font_name, "semibold", "semibold")
@@ -1227,16 +1075,13 @@ def generate_thumbnail(
     text_area_y = top_pad  # Perfect alignment with cover zone top
     text_area_w = available_for_text
 
-    # Load font-specific profile for dynamic sizing
-    # Each font (Bebas Neue, Cairo, etc.) has its own sizing dynamics!
-    repo_root = Path(__file__).resolve().parents[3]  # Fixed: was parents[2], should be parents[3]!
-    config_dir = repo_root / "config"
-    font_profile = _load_font_profile(title_font_name or "Bebas Neue", config_dir)
+    # Load hardcoded Bebas Neue profile (NO config dependency)
+    font_profile = _get_bebas_neue_profile()
     
     if debug:
-        print(f"[thumb] DEBUG: config_dir = {config_dir}")
+        print(f"[thumb] DEBUG: Using hardcoded Bebas Neue profile")
         print(f"[thumb] DEBUG: title_base_size = {font_profile['title_base_size']}")
-        print(f"[thumb] loaded font profile for '{title_font_name}': base={font_profile['title_base_size']}px")
+        print(f"[thumb] Bebas Neue profile: base={font_profile['title_base_size']}px")
 
     # Load fonts (bigger main title size and smaller subtitle size)
     try:
