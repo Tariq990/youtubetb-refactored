@@ -794,11 +794,11 @@ def _generate_ai_tags(
     Generate AI-powered topic tags using Gemini with optimized SEO-focused prompt.
     Returns tags that are content-aware, SEO-optimized, and YouTube-compliant.
     """
-    # Optimized professional SEO prompt
-    prompt = f"""You are a professional YouTube SEO strategist specialized in optimizing tags for book summary videos.
+    # Optimized professional SEO prompt (v2.2.10 - Enhanced with balanced structure)
+    prompt = f"""You are a professional YouTube SEO strategist specializing in optimizing tags for **book summary and self-development videos**.
 
 **TASK:**
-Generate a list of YouTube tags optimized for discoverability and ranking.
+Generate a **high-performing list of YouTube tags** optimized for search discoverability, engagement, and watch relevance.
 
 **INPUT:**
 Book Title: {book_title}
@@ -808,97 +808,96 @@ Brand: InkEcho
 ---
 
 ### 🎯 OBJECTIVES:
-- Produce tags that maximize **search reach**, **click-through rate (CTR)**, and **topic relevance**.
-- Include mix of **high-volume keywords**, **specific book concepts**, and **search-intent phrases**.
-- Ensure the tags sound *natural and searchable* (how real users type queries).
+- Maximize **search visibility**, **CTR (click-through rate)**, and **semantic relevance**.
+- Include a balanced mix of **broad**, **mid-tail**, and **long-tail** keywords.
+- Focus on **how real users search** for book summaries and habit/mindset content.
+- Slightly repeat **key terms** like the book title and author in natural variations.
 
 ---
 
-### ⚙️ **STRICT RULES**
-1. Generate **EXACTLY 25–30 tags**.
-2. Each tag must be **≤26 characters** (hard limit).
-3. Total combined characters = **450–495 characters**.
-4. **No duplicate or near-duplicate** tags.
-5. Use **spaces** between words (no compressed tags unless necessary).
-6. Keep tags in **lowercase except book/author names**.
-7. Avoid punctuation (except apostrophes if needed).
-8. Tags must be **search-friendly phrases**, not hashtags.
+### ⚙️ STRICT RULES:
+1. Generate **EXACTLY 30 tags** (count carefully - this is mandatory).  
+2. Each tag ≤ **26 characters**.  
+3. Total combined characters: **460–500**.  
+4. **No duplicates** or close duplicates.  
+5. Tags must include **spaces**, not underscores or dashes.  
+6. Use lowercase except for **Book Title** and **Author Name**.  
+7. No hashtags, punctuation, or emojis.  
+8. Tags must be **realistic search phrases**, not technical terms.  
+9. At least **2–3 tags** should contain both book and author names.  
 
 ---
 
-### 🧩 **TAG STRUCTURE & BALANCE**
-Create a balanced mix using these categories:
+### 🧩 TAG STRUCTURE & BALANCE:
 
-#### A) Must-have Tags (4–5)
-- Exact book title (e.g., "The 4 Hour Workweek")
-- Author name (e.g., "Timothy Ferriss")
-- Combined compressed tag (e.g., "The4HourWorkweekFerriss")
+#### A) Core Tags (5)
+- "{book_title}"
+- "{author_name}"
+- "{book_title} {author_name}"
 - "book summary"
-- Brand (e.g., "InkEcho")
+- "InkEcho"
 
-#### B) Video Format Tags (3–4)
-Choose from:
-- "narrated summary"
-- "book explained"
-- "audiobook"
+#### B) Format Tags (3–4)
 - "animated summary"
-- "motivational narration"
-- "visual book summary"
+- "audiobook"
+- "book explained"
+- "motivational summary"
 
-#### C) SEO Keywords (6–8)
-Pick 1–2 from each theme:
-- Self-growth: "self improvement", "personal development"
-- Motivation: "motivational", "inspirational content"
-- Learning: "educational", "book review"
-- Productivity: "productivity", "mindset tips"
-- Success: "success habits", "self discipline", "law of attraction", "mental strength"
+#### C) High-Intent SEO Keywords (6–8)
+- "self improvement"
+- "personal development"
+- "motivational"
+- "educational"
+- "productivity"
+- "self discipline"
+- "success habits"
+- "mindset tips"
 
-#### D) Long-tail Search Tags (4–6)
-Use realistic search phrases:
-- "how to" + {{book topic or title}}
+#### D) Long-Tail Phrases (4–6)
+- "how to apply {{book_title}}"
 - "{{author_name}} techniques"
 - "best self help books"
-- "power of" + {{key concept}}
-- "{{book_topic}} audiobook"
-- "how to apply {{book title}}"
+- "power of small habits"
+- "{{book_title}} audiobook"
+- "how habits shape you"
 
 #### E) Topic-Specific Tags (8–10)
-- Use natural, short phrases that describe the **main ideas, techniques, or benefits** of the book.
-- Examples:
-  - For productivity books: "time management", "work less live more"
-  - For mindset books: "mental focus", "habit formation"
-  - For success books: "goal setting", "financial freedom"
-- Prioritize concepts people actually search.
+- "habit formation"
+- "identity habits"
+- "1 percent better"
+- "daily habits"
+- "behavior change"
+- "tiny improvements"
+- "environment design"
+- "habit stacking"
+- "atomic mindset"
+- "growth mindset"
 
 ---
 
-### 🪄 **ORDERING PRIORITY**
+### 🪄 ORDERING PRIORITY
 1. Book title  
 2. Author name  
-3. Combined compressed tag  
+3. Combined tag (book + author)  
 4. "book summary"  
-5. Video format tags  
-6. SEO keywords  
-7. Long-tail search tags  
-8. Topic-specific tags  
-9. Brand name at end  
+5. "InkEcho"
+6. Video format tags  
+7. SEO keywords  
+8. Long-tail phrases  
+9. Topic-specific tags
 
 ---
 
-### ⚠️ **OUTPUT RULES**
-- Return **ONLY** a JSON array of strings.
-- Do **NOT** include any explanations, headers, or extra text.
-- Ensure every tag respects the 26-character limit.
-
----
-
-**OUTPUT EXAMPLE (format only):**
-["tag1", "tag2", "tag3", "..."]
+### ⚠️ OUTPUT RULES:
+- Return **ONLY** a JSON array of EXACTLY 30 strings.  
+- No headers, comments, or explanations.  
+- All tags must follow the above character and balance rules.
+- **Count your tags before returning - must be exactly 30.**
 
 ---
 
 **BEGIN NOW:**
-Generate tags for the book:  
+Generate **exactly 30 tags** for the book:
 📘 {book_title}  
 ✍️ {author_name or "Unknown"}"""
 
