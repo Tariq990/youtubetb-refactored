@@ -74,3 +74,21 @@ src/database.json
 # Logs
 *.log
 logs/
+
+# Additional ignore patterns requested by user
+# Prevent accidental commit of database, runs, tmp, pixel/database artifacts and book logs
+database/
+runs/
+run/
+tmp/
+*.db
+*.sqlite
+*.sqlite3
+database.json
+database_*.json
+database-*.json
+*.db-journal
+pixel_db/
+pixel_database/
+*.pixel
+book.log
