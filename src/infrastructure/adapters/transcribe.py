@@ -7,11 +7,38 @@ import sys
 import time
 import re
 import subprocess  # CRITICAL: needed for check=True error handling
+import random
 
 
 # Workspace dirs
 REPO_ROOT = Path(__file__).resolve().parents[3]  # Fixed: was parents[2], should be parents[3] to reach repo root
 TMP_SUBS_DIR = REPO_ROOT / "tmp" / "subs"
+
+
+# User-Agent pool for rotation (mimics real browsers)
+USER_AGENTS = [
+    # Your actual Chrome browser (PRIORITY - most recent)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+    # Chrome on Windows (recent versions)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    # Chrome on macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    # Firefox on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    # Firefox on macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+    # Edge on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+    # Safari on macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+]
+
+
+def get_random_user_agent() -> str:
+    """Get a random User-Agent from the pool"""
+    return random.choice(USER_AGENTS)
 
 
 def ensure_dir(p: Union[Path, str]) -> None:
@@ -89,9 +116,18 @@ def run_yt_dlp_download_subs(
     auto_avail = set()
     _info_title = ''
     _info_language = ''
+    
+    # Get random User-Agent for this request
+    user_agent = get_random_user_agent()
+    print(f"[INFO] Using User-Agent: {user_agent[:50]}...")  # Show first 50 chars
+    
     try:
         from yt_dlp import YoutubeDL  # type: ignore
-        ydl_opts: dict[str, Any] = {}
+        ydl_opts: dict[str, Any] = {
+            'http_headers': {
+                'User-Agent': user_agent
+            }
+        }
         if cookies is not None and cookies.exists():
             ydl_opts['cookiefile'] = str(cookies)
         with YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
@@ -134,7 +170,7 @@ def run_yt_dlp_download_subs(
             _info_language = (info.get('language') or '')
     except Exception:
         try:
-            cmd = ["yt-dlp", "--list-subs", video_url]
+            cmd = ["yt-dlp", "--list-subs", "--user-agent", user_agent, video_url]
             if cookies is not None and cookies.exists():
                 cmd[1:1] = ["--cookies", str(cookies)]
             # CRITICAL FIX: check=True to catch yt-dlp failures
@@ -261,6 +297,9 @@ def run_yt_dlp_download_subs(
                 'subtitlesformat': 'vtt',
                 'outtmpl': out_template,
                 'subtitleslangs': [chosen_lang],
+                'http_headers': {
+                    'User-Agent': user_agent
+                }
             }
             if cookies is not None and cookies.exists():
                 opts['cookiefile'] = str(cookies)
@@ -273,6 +312,7 @@ def run_yt_dlp_download_subs(
             cmd = [
                 "yt-dlp", "--no-warnings", "--skip-download", "-o", out_template,
                 "--sub-lang", chosen_lang, "--sub-format", "vtt",
+                "--user-agent", user_agent,
             ]
             if mode == 'manual':
                 cmd += ["--write-sub"]
