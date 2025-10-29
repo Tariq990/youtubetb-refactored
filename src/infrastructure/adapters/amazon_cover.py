@@ -14,6 +14,34 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import requests
 
 
+# User-Agent rotation to avoid bot detection
+USER_AGENTS = [
+    # Chrome (Windows) - Latest
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    # Chrome (Windows) - Slightly older
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    # Firefox (Windows)
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    # Edge (Windows)
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    # Safari (macOS)
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    # Chrome (macOS)
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    # Chrome (Linux)
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    # Firefox (macOS)
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0',
+    # Firefox (Linux)
+    'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0'
+]
+
+
+def get_random_user_agent() -> str:
+    """Select a random User-Agent from the pool."""
+    return random.choice(USER_AGENTS)
+
+
 def _load_cookies_from_file(cookies_path: Path) -> List[Dict[str, Any]]:
     """
     Load cookies from Netscape format file (cookies.txt).
@@ -149,12 +177,12 @@ def _extract_book_info(element) -> Dict:
                     high_quality_url = re.sub(r'_SY\d+_', '_SY1000_', high_quality_url)
                     
                     info['image_url'] = high_quality_url
-                    print(f"  [Filter] ✓ Valid book cover detected (ID: {img_id}, length: {len(img_id)})")
+                    print(f"  [Filter] [OK] Valid book cover detected (ID: {img_id}, length: {len(img_id)})")
                 else:
                     # No image ID found - use original URL with quality upgrade
                     high_quality_url = re.sub(r'_AC_U[XY]\d+_', '_AC_UL1000_', src)
                     info['image_url'] = high_quality_url
-                    print(f"  [Filter] ✓ Valid book cover detected (no ID pattern)")
+                    print(f"  [Filter] [OK] Valid book cover detected (no ID pattern)")
 
 
         
@@ -226,11 +254,14 @@ def _get_book_cover_from_amazon_playwright(
                 print(f"[Amazon] Retry {attempt + 1}/{max_retries} after {delay:.1f}s...")
                 time.sleep(delay)
             
+            # Select random User-Agent for each attempt
+            user_agent = get_random_user_agent()
+            
             with sync_playwright() as p:
                 # Launch browser
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context(
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    user_agent=user_agent,
                     viewport={'width': 1920, 'height': 1080},
                     locale='en-US'
                 )
@@ -330,9 +361,9 @@ def _get_book_cover_from_amazon_playwright(
                 
                 # Select best book
                 best_book = books[0]
-                print(f"\n[Amazon] ✅ SELECTED BEST MATCH:")
+                print(f"\n[Amazon] [SELECTED] BEST MATCH:")
                 print(f"  Title: {best_book.get('title', 'N/A')[:60]}")
-                print(f"  Rating: {best_book['rating']:.1f} ⭐")
+                print(f"  Rating: {best_book['rating']:.1f} stars")
                 print(f"  Reviews: {best_book['reviews']:,}")
                 print(f"  Relevance: {best_book['relevance']:.0%}")
                 print(f"  Position: #{best_book['position']+1}")
@@ -376,15 +407,8 @@ def _get_book_cover_from_amazon_requests(title: str, author: Optional[str]) -> O
         
         print(f"[Amazon/Requests] Searching for: {query}")
         
-        # Random user agent
-        user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        ]
-        
         headers = {
-            'User-Agent': random.choice(user_agents),
+            'User-Agent': get_random_user_agent(),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -421,72 +445,6 @@ def _get_book_cover_from_amazon_requests(title: str, author: Optional[str]) -> O
         return None
     except Exception as e:
         print(f"[Amazon/Requests] [ERROR] Error: {e}")
-        return None
-
-
-def _get_book_cover_from_google_books(title: str, author: Optional[str]) -> Optional[str]:
-    """
-    Get book cover from Google Books API.
-    Fast and reliable alternative to scraping.
-    
-    Args:
-        title: Book title (English)
-        author: Author name (English, optional)
-    
-    Returns:
-        Cover image URL if found, None otherwise
-    """
-    try:
-        import requests
-        import urllib.parse
-        
-        # Build search query
-        query = f"intitle:{title}"
-        if author:
-            query += f" inauthor:{author}"
-        
-        encoded_query = urllib.parse.quote(query)
-        api_url = f"https://www.googleapis.com/books/v1/volumes?q={encoded_query}&maxResults=5"
-        
-        print(f"[Google Books] Searching for: {title} by {author or 'Unknown'}")
-        
-        response = requests.get(api_url, timeout=10)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if 'items' in data and data['items']:
-            # Look through results for the best match
-            for item in data['items']:
-                volume_info = item.get('volumeInfo', {})
-                
-                # Check if title matches closely
-                api_title = volume_info.get('title', '').lower()
-                search_title = title.lower()
-                
-                # Simple title matching (could be improved)
-                if search_title in api_title or api_title in search_title:
-                    # Get the largest available image
-                    images = volume_info.get('imageLinks', {})
-                    
-                    # Prefer large thumbnail
-                    cover_url = images.get('large') or images.get('medium') or images.get('small') or images.get('thumbnail')
-                    
-                    if cover_url:
-                        # Remove size restrictions from Google Books URLs
-                        cover_url = re.sub(r'&zoom=\d+', '', cover_url)
-                        cover_url = re.sub(r'&edge=curl', '', cover_url)
-                        print(f"[Google Books] [OK] Found cover image")
-                        return cover_url
-            
-            print("[Google Books] [X] No matching book found")
-            return None
-        
-        print("[Google Books] [X] No results from API")
-        return None
-        
-    except Exception as e:
-        print(f"[Google Books] [ERROR] {e}")
         return None
 
 
