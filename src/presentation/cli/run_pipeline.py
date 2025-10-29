@@ -1184,11 +1184,24 @@ def _run_internal(
 
         if not transcript_path:
             error_msg = "❌ CRITICAL: All candidates failed transcription"
-            console.print(f"[red]{error_msg}[/red]")
+            console.print(f"\n[bold red]{error_msg}[/bold red]")
+            
+            # Check if error is cookies-related
+            console.print("\n[yellow]🔍 Common causes:[/yellow]")
+            console.print("[yellow]   1. YouTube is blocking your IP (too many requests)[/yellow]")
+            console.print("[yellow]   2. Cookies are expired or invalid[/yellow]")
+            console.print("[yellow]   3. Videos require sign-in verification[/yellow]")
+            
+            console.print("\n[cyan]💡 Recommended solutions:[/cyan]")
+            console.print("[cyan]   • Update your cookies: python scripts/export_cookies.py[/cyan]")
+            console.print("[cyan]   • Wait 10-15 minutes before retrying (IP cooldown)[/cyan]")
+            console.print("[cyan]   • Try a different book/video[/cyan]")
+            console.print("[dim]   • See docs/COOKIES_SETUP.md for detailed guide[/dim]")
+            
             summary["stages"].append({
                 "name": "transcribe",
                 "status": "failed",
-                "error": "All candidates failed transcription"
+                "error": "All candidates failed transcription - likely cookies/IP issue"
             })
             _save_summary(d["root"], summary)  # ← CRITICAL: Save failure
             raise RuntimeError(error_msg)  # Allow batch to catch and continue to next book
