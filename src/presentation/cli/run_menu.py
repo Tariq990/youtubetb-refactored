@@ -131,7 +131,7 @@ def header() -> None:
     t.add_column("Action", style="white")
     t.add_row("0", "🔍 Check APIs & Requirements (Comprehensive Test)")
     t.add_row("1", "Run FULL pipeline")
-    t.add_row("2", "📚 Batch Process from books.txt (Multiple Books)")
+    t.add_row("2", "📚 Batch Process from books.txt (Auto-Continue Support)")
     t.add_row("3", "📺 Process Entire YouTube Channel (All Videos)")
     t.add_row("4", "Search only")
     t.add_row("5", "Transcribe only")
@@ -446,9 +446,18 @@ def run_batch():
             console.print("[red]Cancelled[/red]")
             return
 
+        # Ask about auto-continue mode
+        console.print("\n[cyan]📌 Auto-Continue Mode:[/cyan]")
+        console.print("[dim]   • ON: Skip failed books automatically (no prompts)[/dim]")
+        console.print("[dim]   • OFF: Ask what to do when a book fails[/dim]")
+        auto_mode = Prompt.ask("\nEnable Auto-Continue mode?", choices=["yes", "no"], default="yes")
+
         # Run batch processing
         batch_script = repo_root() / "src" / "presentation" / "cli" / "run_batch.py"
-        subprocess.run([py(), str(batch_script)], cwd=repo_root())
+        cmd = [py(), str(batch_script)]
+        if auto_mode == "yes":
+            cmd.append("--auto-continue")
+        subprocess.run(cmd, cwd=repo_root())
 
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/red]")
