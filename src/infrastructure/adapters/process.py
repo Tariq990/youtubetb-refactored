@@ -163,7 +163,10 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
                 line = line.strip()
                 # Skip empty lines and comments
                 if line and not line.startswith("#"):
-                    api_keys.append(line)
+                    # Remove inline comments (split on #)
+                    key = line.split('#')[0].strip()
+                    if key:
+                        api_keys.append(key)
         except Exception as e:
             print(f"⚠️  Could not read api_keys.txt: {e}")
     

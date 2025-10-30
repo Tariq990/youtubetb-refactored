@@ -5,6 +5,111 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2025-10-30
+
+### Added - Cookies & Pexels Fallback Systems 🍪🎬
+
+#### Cookies Fallback System
+- **Multi-File Cookies Support**: Cookie files now support multi-file fallback identical to API keys
+  - 5 locations checked in priority order:
+    1. `secrets/cookies.txt` (Primary - Main account)
+    2. `secrets/cookies_1.txt` (Fallback 1 - Backup account)
+    3. `secrets/cookies_2.txt` (Fallback 2 - Alternative account)
+    4. `secrets/cookies_3.txt` (Fallback 3 - Emergency account)
+    5. `cookies.txt` (Root fallback)
+  - Auto-validates each file: size > 50 bytes, not HTML, valid format
+  - Uses first valid file, keeps rest as backups
+  - Automatic fallback on cookie expiration or failure
+
+#### Pexels API Fallback System (NEW)
+- **Multi-Source API Key Support**: Pexels API keys now support multi-source fallback
+  - 6 locations checked in priority order:
+    1. `PEXELS_API_KEY` environment variable (Highest priority)
+    2. `secrets/.env` (Main .env file with PEXELS_API_KEY=...)
+    3. `secrets/pexels_key.txt` (Recommended - Dedicated Pexels key file)
+    4. `secrets/api_keys.txt` (Shared API keys file)
+    5. `secrets/api_key.txt` (Legacy API key file)
+    6. `.env` (Root .env fallback)
+  - Auto-validates: length > 20 chars, not comment, valid format
+  - Supports .env format (KEY=value) and plain text
+  - Uses first valid key, tracks backups
+  - Clear error messages with setup instructions
+
+#### Validation System
+- **Smart File Validation**: Each cookies file validated before use
+  - Checks file exists and size > 50 bytes
+  - Validates content is not HTML error page (not `<!DOCTYPE`)
+  - Ensures valid cookies format
+  - Clear error messages for invalid files
+
+#### Reporting & Monitoring
+- **Clear Status Messages**: Shows which cookies files found and used
+  - Primary cookies file displayed
+  - Backup cookies count shown
+  - Validation status for each location
+  - Helpful tips when no cookies found
+
+#### Implementation - Cookies
+- **Files Modified**:
+  - `src/infrastructure/adapters/transcribe.py`: Added multi-file cookies scanning
+  - `src/presentation/cli/run_pipeline.py`: Updated `_preflight_check()` cookies section
+  
+- **Files Created**:
+  - `scripts/test_cookies_fallback.py`: Complete test script for cookies fallback
+  - `docs/COOKIES_FALLBACK_SYSTEM.md`: Full documentation (Arabic, 600+ lines)
+  - `COOKIES_FALLBACK_UPDATE.md`: Detailed update notes (400+ lines)
+  - `COOKIES_FALLBACK_README.md`: Quick reference guide
+  - `COOKIES_FALLBACK_SUMMARY.md`: Summary of all changes
+  - `demo_cookies_fallback.py`: Interactive demo
+
+#### Implementation - Pexels
+- **Files Modified**:
+  - `src/infrastructure/adapters/shorts_generator.py`: Added multi-source API key fallback
+  - `src/presentation/cli/check_apis.py`: Updated Pexels API check with fallback
+  
+- **Files Created**:
+  - `docs/PEXELS_FALLBACK_SYSTEM.md`: Complete documentation (Arabic, ~350 lines)
+
+#### Testing
+- **Cookies Test Coverage**: Complete test script validates entire system
+  - Scans all 5 cookie locations
+  - Validates each file (size, format, content)
+  - Shows primary + backup cookies
+  - Tests preflight integration
+  - Run: `python scripts\test_cookies_fallback.py`
+
+- **Pexels Validation**: Integrated into existing API checks
+  - Checks all 6 locations for API key
+  - Validates key format and length
+  - Tests actual API connection
+  - Run: `python main.py` → Option 0
+
+#### Documentation
+- **Comprehensive Guides**:
+  - Arabic documentation with setup instructions
+  - Troubleshooting guide for common issues
+  - Migration guide for existing users
+  - Usage examples and best practices
+  - Security and privacy notes
+
+#### Benefits
+- **Reliability**: Auto-fallback if primary cookies expire
+- **Multi-Account**: Support multiple YouTube accounts
+- **Consistency**: Identical pattern to API keys fallback
+- **User-Friendly**: Clear messages and helpful tips
+- **Production-Ready**: Higher uptime, better error handling
+
+### Changed
+- Updated `.github/copilot-instructions.md` to v2.3.0
+- Updated version number across documentation
+
+### Technical Details
+- **Pattern Consistency**: Cookies fallback now matches API keys fallback exactly
+  - Same 5-location priority system
+  - Same validation approach
+  - Same error reporting format
+  - Same fallback logic
+
 ## [2.1.0] - 2025-10-19
 
 ### Added - Intelligent Batch Processing

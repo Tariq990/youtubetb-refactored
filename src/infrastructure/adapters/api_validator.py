@@ -243,8 +243,10 @@ class APIValidator:
             for line in lines:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    if line not in api_keys:
-                        api_keys.append(line)
+                    # Remove inline comments (split on #)
+                    key = line.split('#')[0].strip()
+                    if key and key not in api_keys:
+                        api_keys.append(key)
         
         if not api_keys:
             return False, "❌ API key not found in environment or secrets/"
@@ -323,7 +325,10 @@ class APIValidator:
                     line = line.strip()
                     # Skip empty lines and comments
                     if line and not line.startswith("#"):
-                        api_keys.append(line)
+                        # Remove inline comments (split on #)
+                        key = line.split('#')[0].strip()
+                        if key:
+                            api_keys.append(key)
             except Exception:
                 pass
         

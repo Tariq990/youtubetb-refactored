@@ -62,8 +62,10 @@ def _load_all_youtube_api_keys():
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#"):
-                        if line not in api_keys:  # Avoid duplicates
-                            api_keys.append(line)
+                        # Remove inline comments (split on #)
+                        key = line.split('#')[0].strip()
+                        if key and key not in api_keys:  # Avoid duplicates
+                            api_keys.append(key)
         except Exception:
             pass
     

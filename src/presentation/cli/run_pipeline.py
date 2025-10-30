@@ -503,7 +503,7 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                 print("Playwright browsers not ready:", e)
                 ok = False
 
-            # Cookies check (optional by default; required if configured)
+            # ===== Cookies check with FALLBACK SYSTEM (multi-file support) =====
             require_cookies = False
             try:
                 # from config settings.json flag
@@ -520,23 +520,46 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
             except Exception:
                 pass
 
-            cookie_candidates = [repo_root / "secrets" / "cookies.txt", repo_root / "cookies.txt"]
-            cookie_found = None
-            for cpath in cookie_candidates:
+            # Multi-file cookies fallback (similar to API keys)
+            cookie_candidates = [
+                repo_root / "secrets" / "cookies.txt",      # Priority 1: Main cookies
+                repo_root / "secrets" / "cookies_1.txt",    # Priority 2: Fallback 1
+                repo_root / "secrets" / "cookies_2.txt",    # Priority 3: Fallback 2
+                repo_root / "secrets" / "cookies_3.txt",    # Priority 4: Fallback 3
+                repo_root / "cookies.txt"                   # Priority 5: Root fallback
+            ]
+            
+            cookies_found = []  # Track all valid cookies
+            
+            for idx, cpath in enumerate(cookie_candidates, 1):
                 try:
-                    if cpath.exists() and cpath.stat().st_size > 0:
-                        cookie_found = cpath
-                        break
-                except Exception:
-                    pass
-            if cookie_found:
-                print("cookies.txt found:", cookie_found)
+                    if cpath.exists() and cpath.stat().st_size > 50:  # Min 50 bytes validation
+                        # Validate cookies format (basic check)
+                        content = cpath.read_text(encoding='utf-8', errors='ignore').strip()
+                        if content and not content.startswith('<!DOCTYPE'):  # Not HTML error page
+                            cookies_found.append(cpath)
+                            print(f"✓ Cookies file {idx}/{len(cookie_candidates)} valid: {cpath.name}")
+                        else:
+                            print(f"⚠️  Cookies file {idx} invalid format: {cpath.name}")
+                except Exception as e:
+                    print(f"⚠️  Failed to check cookies file {idx}: {e}")
+            
+            if cookies_found:
+                print(f"🍪 Cookies found: {len(cookies_found)} valid file(s)")
+                print(f"   Primary: {cookies_found[0]}")
+                if len(cookies_found) > 1:
+                    print(f"   Backup: {len(cookies_found)-1} fallback file(s) available")
             else:
                 if require_cookies:
-                    print("cookies.txt is required but was not found in 'secrets/cookies.txt' or repo root.")
+                    print("❌ cookies.txt is required but was not found in any location:")
+                    for cp in cookie_candidates:
+                        print(f"   - {cp}")
                     ok = False
                 else:
-                    print("cookies.txt not found; proceeding without cookies.")
+                    print("⚠️  cookies.txt not found; proceeding without cookies.")
+                    print("   Locations checked:")
+                    for cp in cookie_candidates[:3]:  # Show first 3 only
+                        print(f"   - {cp}")
 
             # YouTube API key test (with multi-key fallback)
             yt_keys = []
@@ -603,7 +626,10 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                     for line in content.splitlines():
                         line = line.strip()
                         if line and not line.startswith("#"):
-                            gm_keys.append(line)
+                            # Remove inline comments (split on #)
+                            key = line.split('#')[0].strip()
+                            if key:
+                                gm_keys.append(key)
                     if gm_keys:
                         print(f"📋 Loaded {len(gm_keys)} API key(s) for fallback")
                 except Exception as e:

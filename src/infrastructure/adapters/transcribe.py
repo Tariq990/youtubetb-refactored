@@ -526,33 +526,45 @@ def main(
     except Exception:
         return None
 
+    # ===== COOKIES FALLBACK SYSTEM (Multi-file support) =====
     cookies = None
     cookie_paths = [
-        REPO_ROOT / "secrets" / "cookies.txt",
-        REPO_ROOT / "cookies.txt"
+        REPO_ROOT / "secrets" / "cookies.txt",      # Priority 1: Main cookies
+        REPO_ROOT / "secrets" / "cookies_1.txt",    # Priority 2: Fallback 1
+        REPO_ROOT / "secrets" / "cookies_2.txt",    # Priority 3: Fallback 2
+        REPO_ROOT / "secrets" / "cookies_3.txt",    # Priority 4: Fallback 3
+        REPO_ROOT / "cookies.txt"                   # Priority 5: Root fallback
     ]
     
-    for c in cookie_paths:
+    cookies_found = []  # Track all valid cookies files
+    
+    # Scan all cookie files
+    for idx, c in enumerate(cookie_paths, 1):
         if c.exists():
             # Verify cookies file is not empty and has valid format
             try:
                 content = c.read_text(encoding='utf-8').strip()
                 if content and len(content) > 50:  # Basic validation
-                    cookies = c
-                    print(f"[Cookies] Using cookies file: {c}")
-                    break
+                    cookies_found.append(c)
+                    print(f"[Cookies] ✓ Valid cookies file {idx}/{len(cookie_paths)}: {c.name}")
                 else:
-                    print(f"[Cookies] Warning: {c} exists but appears empty or invalid")
+                    print(f"[Cookies] ⚠️  File {idx} exists but appears empty or invalid: {c.name}")
             except Exception as e:
-                print(f"[Cookies] Warning: Failed to read {c}: {e}")
+                print(f"[Cookies] ⚠️  Failed to read file {idx}: {c.name} ({e})")
     
-    if not cookies:
-        print("[Cookies] No valid cookies.txt found")
-        print("[Cookies] Locations checked:")
+    # Use first valid cookies file (priority order)
+    if cookies_found:
+        cookies = cookies_found[0]
+        print(f"[Cookies] 🍪 Using primary cookies: {cookies}")
+        if len(cookies_found) > 1:
+            print(f"[Cookies] 📋 {len(cookies_found)-1} backup cookies available for fallback")
+    else:
+        print("[Cookies] ❌ No valid cookies.txt found")
+        print("[Cookies] 📂 Locations checked:")
         for cp in cookie_paths:
             print(f"  - {cp}")
-        print("[Cookies] Tip: Export cookies.txt from browser using 'Get cookies.txt' extension")
-        print("[Cookies] Make sure to login to YouTube first, then export cookies")
+        print("[Cookies] 💡 Tip: Export cookies.txt from browser using 'Get cookies.txt' extension")
+        print("[Cookies] 🔐 Make sure to login to YouTube first, then export cookies")
 
     attempts = 2
     methods = ['yt-dlp', 'transcript-api']

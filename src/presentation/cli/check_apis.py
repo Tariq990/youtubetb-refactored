@@ -50,20 +50,54 @@ def check_gemini_api() -> Tuple[bool, str]:
 
 
 def check_pexels_api() -> Tuple[bool, str]:
-    """Test Pexels API with actual API call"""
+    """Test Pexels API with actual API call (with multi-file fallback)"""
     try:
         import requests
 
-        # Load API key
+        # ===== PEXELS API KEY FALLBACK SYSTEM =====
+        api_key = None
+        
+        # Priority 1: Environment variable
         api_key = os.getenv("PEXELS_API_KEY")
+        
         if not api_key:
-            env_path = Path("secrets/.env")
-            if env_path.exists():
-                load_dotenv(env_path)
-                api_key = os.getenv("PEXELS_API_KEY")
+            # Priority 2-6: Check multiple locations
+            repo_root = Path(__file__).resolve().parents[3]
+            api_key_paths = [
+                repo_root / "secrets" / ".env",           # Priority 2: Main .env
+                repo_root / "secrets" / "pexels_key.txt", # Priority 3: Dedicated file
+                repo_root / "secrets" / "api_keys.txt",   # Priority 4: Shared keys
+                repo_root / "secrets" / "api_key.txt",    # Priority 5: Legacy
+                repo_root / ".env"                        # Priority 6: Root .env
+            ]
+            
+            for key_path in api_key_paths:
+                if key_path.exists():
+                    try:
+                        content = key_path.read_text(encoding="utf-8").strip()
+                        
+                        # Handle .env format
+                        if key_path.name.endswith('.env'):
+                            for line in content.splitlines():
+                                if line.strip().startswith("PEXELS_API_KEY="):
+                                    api_key = line.split("=", 1)[1].strip()
+                                    break
+                        
+                        # Handle plain text format
+                        else:
+                            for line in content.splitlines():
+                                line = line.strip()
+                                if line and not line.startswith("#") and len(line) > 20:
+                                    api_key = line
+                                    break
+                        
+                        if api_key:
+                            break
+                    except Exception:
+                        continue
 
         if not api_key:
-            return False, "❌ PEXELS_API_KEY not found in environment or secrets/.env"
+            return False, "❌ PEXELS_API_KEY not found (env or secrets/.env or secrets/pexels_key.txt)"
 
         # Test actual API call
         headers = {"Authorization": api_key}

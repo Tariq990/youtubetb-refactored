@@ -598,8 +598,10 @@ def _get_all_youtube_api_keys() -> list[str]:
                 line = line.strip()
                 # تجاهل الأسطر الفارغة والتعليقات
                 if line and not line.startswith("#"):
-                    if line not in api_keys:  # تجنب التكرار
-                        api_keys.append(line)
+                    # إزالة التعليقات الداخلية (split على #)
+                    key = line.split('#')[0].strip()
+                    if key and key not in api_keys:  # تجنب التكرار
+                        api_keys.append(key)
         except Exception:
             pass
     

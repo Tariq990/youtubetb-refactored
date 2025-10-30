@@ -281,18 +281,71 @@ def _fetch_pexels_videos(
         "fjord landscape",
         "geyser steam",
     ]
+    
+    # ===== PEXELS API KEY FALLBACK SYSTEM (Multi-file support) =====
+    api_key = None
+    
+    # Get repository root (go up 3 levels from this file)
+    repo_root = Path(__file__).resolve().parents[3]
+    
+    # Priority 1: Environment variable
     api_key = os.getenv("PEXELS_API_KEY")
+    
     if not api_key:
-        # Try to read from secrets/.env manually if not loaded
-        try:
-            env_path = Path("secrets/.env")
-            if env_path.exists():
-                for line in env_path.read_text(encoding="utf-8").splitlines():
-                    if line.strip().startswith("PEXELS_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip()
-                        break
-        except Exception:
-            pass
+        # Priority 2-6: Check multiple API key files
+        api_key_paths = [
+            repo_root / "secrets" / ".env",           # Priority 2: Main .env
+            repo_root / "secrets" / "pexels_key.txt", # Priority 3: Dedicated Pexels key
+            repo_root / "secrets" / "api_keys.txt",   # Priority 4: Shared API keys file
+            repo_root / "secrets" / "api_key.txt",    # Priority 5: Legacy API key
+            repo_root / ".env"                        # Priority 6: Root .env
+        ]
+        
+        api_keys_found = []  # Track all valid API keys
+        
+        for idx, key_path in enumerate(api_key_paths, 1):
+            if key_path.exists():
+                try:
+                    content = key_path.read_text(encoding="utf-8").strip()
+                    
+                    # Handle .env format (KEY=value)
+                    if key_path.name.endswith('.env'):
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if line.startswith("PEXELS_API_KEY="):
+                                extracted_key = line.split("=", 1)[1].strip()
+                                if extracted_key and len(extracted_key) > 20:  # Valid key length
+                                    api_keys_found.append((key_path, extracted_key))
+                                    print(f"[Pexels] ✓ Valid API key {idx}/{len(api_key_paths)}: {key_path.name}")
+                                break
+                    
+                    # Handle plain text format (key only)
+                    else:
+                        # For multi-line files, try each line
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if line and not line.startswith("#") and len(line) > 20:
+                                api_keys_found.append((key_path, line))
+                                print(f"[Pexels] ✓ Valid API key {idx}/{len(api_key_paths)}: {key_path.name}")
+                                break  # Use first valid key from this file
+                
+                except Exception as e:
+                    print(f"[Pexels] ⚠️  Failed to read file {idx}: {key_path.name} ({e})")
+        
+        # Use first valid API key (priority order)
+        if api_keys_found:
+            key_path, api_key = api_keys_found[0]
+            print(f"[Pexels] 🔑 Using primary API key from: {key_path.name}")
+            if len(api_keys_found) > 1:
+                print(f"[Pexels] 📋 {len(api_keys_found)-1} backup API key(s) available for fallback")
+        else:
+            print("[Pexels] ❌ No valid PEXELS_API_KEY found")
+            print("[Pexels] 📂 Locations checked:")
+            print("   - Environment variable: PEXELS_API_KEY")
+            for kp in api_key_paths:
+                print(f"   - {kp}")
+            print("[Pexels] 💡 Get free API key from: https://www.pexels.com/api/")
+            print("[Pexels] 🔐 Save to secrets/.env or secrets/pexels_key.txt")
 
     if not api_key:
         print("ℹ️ PEXELS_API_KEY not set. Skipping Pexels videos fetch.")

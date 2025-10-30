@@ -6,9 +6,18 @@ Automated YouTube book summary video generator: Arabic YouTube → English video
 
 **Tech Stack**: Python 3.13, Gemini AI, FFmpeg, Playwright, YouTube API v3, OpenAI.fm TTS
 
-**Current Version**: v2.2.9 (Quality maximization + elegant shadow design)
+**Current Version**: v2.3.0 (Cookies & Pexels Fallback Systems)
 
-## 🆕 Latest Updates (v2.2.9 - Oct 26, 2025)
+## 🆕 Latest Updates (v2.3.0 - Oct 30, 2025)
+
+- 🍪 **Cookies Fallback**: Multi-file cookies support (cookies.txt → cookies_1.txt → cookies_2.txt → cookies_3.txt)
+- 🎬 **Pexels Fallback**: Multi-source API key support (env → .env → pexels_key.txt → api_keys.txt → api_key.txt)
+- ✅ **Consistent System**: All fallback systems identical (Gemini, YouTube, Cookies, Pexels)
+- 🔍 **Smart Validation**: Auto-validates all files (size, format, content)
+- 📋 **Multi-Source**: Support multiple API keys/cookies for fallback
+- 🧪 **Test Scripts**: Complete validation tools included
+
+### Previous Updates (v2.2.9 - Oct 26, 2025)
 
 - ✨ **Thumbnail Quality**: Increased to quality=100, dpi=300 (maximum sharpness)
 - 🎨 **Book Cover Design**: Elegant soft shadow (Netflix/Audible style) - replaced double border
@@ -82,13 +91,35 @@ youtubetb_refactored/
 
 │   ├── api_key.txt           # Gemini API key (multi-line fallback)repo_root = Path(__file__).resolve().parents[2]  # For adapters/
 
-│   ├── api_keys.txt          # YouTube Data API keys```
+│   ├── api_keys.txt          # YouTube Data API keys (multi-key)```
 
 │   ├── client_secret.json    # OAuth credentials
 
-│   ├── token.json            # OAuth token (auto-refresh)### Duplicate Detection (FIXED v2.2.2)
+│   ├── token.json            # OAuth token (auto-refresh)### Cookies Fallback System (NEW v2.3.0)
 
-│   └── cookies.txt           # YouTube cookies (age-restricted videos)```python
+│   ├── cookies.txt           # YouTube cookies (Priority 1 - Main)```python
+
+│   ├── cookies_1.txt         # YouTube cookies (Priority 2 - Fallback 1)# Multi-file cookies support (5 locations):
+
+│   ├── cookies_2.txt         # YouTube cookies (Priority 3 - Fallback 2)cookie_paths = [
+
+│   └── cookies_3.txt         # YouTube cookies (Priority 4 - Fallback 3)    "secrets/cookies.txt",      # Priority 1: Main
+
+    "secrets/cookies_1.txt",    # Priority 2: Fallback 1
+
+    "secrets/cookies_2.txt",    # Priority 3: Fallback 2
+
+    "secrets/cookies_3.txt",    # Priority 4: Fallback 3
+
+    "cookies.txt"               # Priority 5: Root fallback
+
+]
+
+# Auto-validates: size > 50 bytes, not HTML, valid format
+
+# Uses first valid, keeps rest as backups
+
+```
 
 │# CORRECT ORDER (check BEFORE add):
 
