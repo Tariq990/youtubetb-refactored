@@ -13,8 +13,27 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich import box
 
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    ARABIC_SUPPORT = True
+except ImportError:
+    ARABIC_SUPPORT = False
+
 
 console = Console()
+
+
+def fix_arabic(text: str) -> str:
+    """Format Arabic text for proper display in terminal."""
+    if not ARABIC_SUPPORT:
+        return text
+    try:
+        reshaped = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped)
+        return str(bidi_text)
+    except Exception:
+        return text
 
 
 def repo_root() -> Path:
@@ -124,8 +143,24 @@ def py() -> str:
 
 
 def header() -> None:
+    # Welcome greeting (bilingual: Arabic and English)
+    arabic_greeting = fix_arabic("مرحباً بك في نظام ملخصات الكتب")
+    english_greeting = "Welcome to YouTube Book Summary Generator"
+    greeting = f"👋 {arabic_greeting}\n{english_greeting}"
+    
+    greeting_panel = Panel(
+        Align.center(greeting, vertical="middle"),
+        style="bold green",
+        border_style="green",
+        expand=True
+    )
+    console.print(greeting_panel)
+    
+    # Main title
     title = Align.center("YouTube Book Video Pipeline", vertical="middle")
     console.print(Panel(title, style="bold cyan", expand=True))
+    
+    # Menu options
     t = Table(box=box.SIMPLE_HEAVY, expand=True)
     t.add_column("Option", justify="center", style="bold yellow")
     t.add_column("Action", style="white")
@@ -144,8 +179,8 @@ def header() -> None:
     t.add_row("12", "Upload to YouTube (requires secrets/client_secret.json)")
     t.add_row("13", "Resume pipeline from last successful stage")
     t.add_row("14", "🔄 Sync Database from YouTube Channel")
-    t.add_row("15", "� Manage API Keys (Add/Test YouTube & Gemini keys)")
-    t.add_row("16", "�🗑️ Clean Up (Delete runs, tmp, database, pexels)")
+    t.add_row("15", "🔑 Manage API Keys (Add/Test YouTube & Gemini keys)")
+    t.add_row("16", "🗑️ Clean Up (Delete runs, tmp, database, pexels)")
     t.add_row("17", "Exit")
     console.print(t)
 

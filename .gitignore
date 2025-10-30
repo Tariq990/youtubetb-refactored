@@ -92,3 +92,5 @@ pixel_db/
 pixel_database/
 *.pixel
 book.log
+*.coverage
+coverage.xml
