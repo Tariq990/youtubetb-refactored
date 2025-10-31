@@ -615,7 +615,8 @@ def main(
                         result = text
                         used_title = info_title
                         break
-                time.sleep(1 + attempt)
+                # Exponential backoff: 5s, 10s, 15s, 20s...
+                time.sleep(5 * attempt)
             if result:
                 print("Success with yt-dlp")
                 break
@@ -626,7 +627,8 @@ def main(
                 if text and text.strip():
                     result = text
                     break
-                time.sleep(1 + attempt)
+                # Exponential backoff: 5s, 10s, 15s...
+                time.sleep(5 * attempt)
             if result:
                 print(f"Success with {method}")
                 break

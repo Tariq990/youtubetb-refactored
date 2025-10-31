@@ -970,8 +970,8 @@ def process_books_batch(
 
         # Small delay between books to avoid rate limits
         if idx < total_books:
-            print("\n⏳ Waiting 5 seconds before next book...")
-            time.sleep(5)
+            print("\n⏳ Waiting 30 seconds before next book...")
+            time.sleep(30)
 
     # Print final summary
     print_final_summary(results)
