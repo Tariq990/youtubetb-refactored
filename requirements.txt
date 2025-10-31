@@ -17,12 +17,12 @@ openai-whisper>=20231117  # Optional: For audio alignment
 
 # Text-to-Speech
 elevenlabs>=0.2.0
-edge-tts>=6.1.0  # Microsoft Edge TTS engine
+# edge-tts>=6.1.0  # DISABLED: Not used in codebase (only OpenAI.fm TTS)
 
 # Media Processing
 Pillow>=10.0.0
 moviepy>=1.0.3
-pydub>=0.25.1
+# pydub>=0.25.1  # DISABLED: Incompatible with Python 3.13+ (missing audioop)
 ffmpeg-python>=0.2.0
 mutagen>=1.47.0  # MP3 metadata extraction for TTS
 numpy>=1.24.0  # Required by moviepy and whisper

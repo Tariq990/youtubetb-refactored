@@ -127,9 +127,12 @@ class APIValidator:
             'typer',
             'playwright',
             'PIL',  # Pillow imports as PIL
-            'edge_tts',
             'mutagen',
-            'pydub',
+        ]
+        
+        # Optional packages (not critical for main pipeline)
+        optional_packages = [
+            'pydub',  # Only for shorts audio trim (Python 3.13+ incompatible)
         ]
 
         missing = []
@@ -138,9 +141,19 @@ class APIValidator:
                 importlib.import_module(package.replace('-', '_'))
             except ImportError:
                 missing.append(package)
+        
+        # Check optional packages (warn but don't fail)
+        optional_missing = []
+        for package in optional_packages:
+            try:
+                importlib.import_module(package.replace('-', '_'))
+            except (ImportError, ModuleNotFoundError):
+                optional_missing.append(package)
 
         if missing:
             return False, f"❌ Missing: {', '.join(missing)}"
+        elif optional_missing:
+            return True, f"✅ All {len(required_packages)} packages installed (⚠️ Optional: {', '.join(optional_missing)} not available - shorts audio trim disabled)"
         else:
             return True, f"✅ All {len(required_packages)} packages installed"
 

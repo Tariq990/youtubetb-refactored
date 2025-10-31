@@ -47,7 +47,8 @@ if exist requirements.txt (
     echo Step 2: Verifying and installing missing packages individually...
     
     :: Check critical packages one by one (package_name:import_name)
-    set "packages=playwright:playwright pydub:pydub google-generativeai:google.generativeai yt-dlp:yt_dlp Pillow:PIL requests:requests typer:typer rich:rich ffmpeg-python:ffmpeg"
+    :: NOTE: pydub & edge-tts removed (pydub: Python 3.13+ incompatible, edge-tts: not used)
+    set "packages=playwright:playwright google-generativeai:google.generativeai yt-dlp:yt_dlp Pillow:PIL requests:requests typer:typer rich:rich ffmpeg-python:ffmpeg mutagen:mutagen"
     
     for %%p in (%packages%) do (
         for /f "tokens=1,2 delims=:" %%a in ("%%p") do (
