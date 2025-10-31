@@ -1073,21 +1073,46 @@ def add_cookies():
     slot = find_empty_cookies_slot()
     if not slot:
         print("\n⚠️  All slots full!")
-        print("Choose slot to overwrite:")
-        for i, path in enumerate(COOKIES_PATHS[:4], 1):
-            size = path.stat().st_size if path.exists() else 0
-            print(f"  [{i}] {path.name} ({size:,} bytes)")
-        print("  [0] Cancel")
+        print("🗑️  Auto-deleting oldest cookies to make space...")
         
-        choice = input("\nChoice: ").strip()
-        if choice in ['1', '2', '3', '4']:
-            slot = COOKIES_PATHS[int(choice) - 1]
+        # Find oldest file by modification time
+        valid_slots = [p for p in COOKIES_PATHS[:4] if p.exists()]
+        if not valid_slots:
+            print("❌ No existing cookies found!")
+            slot = COOKIES_PATHS[0]  # Use first slot
         else:
-            print("❌ Cancelled")
-            return
+            # Sort by modification time (oldest first)
+            oldest = min(valid_slots, key=lambda p: p.stat().st_mtime)
+            
+            # Show which file will be deleted
+            age_seconds = time.time() - oldest.stat().st_mtime
+            age_days = age_seconds / 86400
+            size = oldest.stat().st_size
+            
+            print(f"\n📋 Deleting: {oldest.name}")
+            print(f"   • Age: {age_days:.1f} days old")
+            print(f"   • Size: {size:,} bytes")
+            
+            # Create backup before deletion
+            backup_name = f"{oldest.stem}.deleted_{datetime.now():%Y%m%d_%H%M%S}.bak"
+            backup_path = oldest.parent / backup_name
+            
+            try:
+                shutil.copy2(oldest, backup_path)
+                print(f"   • Backup: {backup_name}")
+                logging.info(f"Created backup of old cookies: {backup_path}")
+            except Exception as e:
+                logging.warning(f"Failed to backup old cookies: {e}")
+            
+            # Delete old file
+            oldest.unlink()
+            print(f"   ✅ Deleted old cookies")
+            logging.info(f"Deleted old cookies: {oldest}")
+            
+            slot = oldest  # Use the now-empty slot
     
     # Save
-    print(f"\nSaving to: {slot}...")
+    print(f"\n💾 Saving to: {slot}...")
     
     # Ensure final_content exists before saving
     if not final_content:
