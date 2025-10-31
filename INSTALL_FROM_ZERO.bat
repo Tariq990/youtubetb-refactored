@@ -20,6 +20,16 @@ if %errorLevel% neq 0 (
 echo ✅ Running as Administrator
 echo.
 
+:: STEP 1.5: Enable Windows Long Paths (Fix for elevenlabs installation)
+echo 🔧 Enabling Windows Long Paths support...
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f >nul 2>&1
+if %errorLevel% equ 0 (
+    echo ✅ Long Paths enabled
+) else (
+    echo ⚠️  Failed to enable Long Paths (may already be enabled)
+)
+echo.
+
 :: STEP 2: Check if Chocolatey exists
 where choco >nul 2>&1
 if %errorLevel% neq 0 (
