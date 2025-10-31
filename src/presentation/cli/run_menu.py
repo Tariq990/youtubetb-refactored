@@ -144,9 +144,11 @@ def header() -> None:
     t.add_row("12", "Upload to YouTube (requires secrets/client_secret.json)")
     t.add_row("13", "Resume pipeline from last successful stage")
     t.add_row("14", "🔄 Sync Database from YouTube Channel")
-    t.add_row("15", "� Manage API Keys (Add/Test YouTube & Gemini keys)")
-    t.add_row("16", "�🗑️ Clean Up (Delete runs, tmp, database, pexels)")
-    t.add_row("17", "Exit")
+    t.add_row("15", "🔑 Manage API Keys (Add/Test YouTube & Gemini keys)")
+    t.add_row("16", "🗑️ Clean Up (Delete runs, tmp, database, pexels)")
+    t.add_row("17", "🍪 Cookies & API Helper (JSON→Netscape, Test APIs)")
+    t.add_row("18", "🔓 Decrypt Secrets (For deployment on new machines)")
+    t.add_row("19", "Exit")
     console.print(t)
 
 
@@ -352,6 +354,74 @@ def run_youtube_sync():
             
     except Exception as e:
         console.print(f"[red]Error during sync: {e}[/red]")
+    
+    pause()
+
+
+def run_cookies_helper():
+    """Launch cookies & API helper tool"""
+    console.clear()
+    console.rule("[bold cyan]🍪 Cookies & API Helper")
+    
+    console.print("[dim]Professional tool for managing cookies and API keys[/dim]")
+    console.print("[dim]Features: JSON→Netscape conversion, API testing, multi-file fallback[/dim]\n")
+    
+    cookies_helper_script = repo_root() / "cookies_helper.py"
+    
+    if not cookies_helper_script.exists():
+        console.print(f"[red]❌ cookies_helper.py not found at: {cookies_helper_script}[/red]")
+        pause()
+        return
+    
+    try:
+        # Run the script with python
+        subprocess.run([py(), str(cookies_helper_script)], cwd=repo_root())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cookies helper closed.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]❌ Error running cookies helper: {e}[/red]")
+    
+    pause()
+
+
+def run_decrypt_secrets():
+    """Launch decrypt secrets script for deployment"""
+    console.clear()
+    console.rule("[bold cyan]🔓 Decrypt Secrets")
+    
+    console.print("[dim]Decrypt encrypted secrets from GitHub for deployment on new machines[/dim]")
+    console.print("[dim]Required files: secrets_encrypted/*.enc + ENCRYPTION_KEY in environment[/dim]\n")
+    
+    decrypt_script = repo_root() / "scripts" / "decrypt_secrets.py"
+    
+    if not decrypt_script.exists():
+        console.print(f"[red]❌ decrypt_secrets.py not found at: {decrypt_script}[/red]")
+        pause()
+        return
+    
+    # Check if encrypted files exist
+    encrypted_dir = repo_root() / "secrets_encrypted"
+    if not encrypted_dir.exists() or not any(encrypted_dir.glob("*.enc")):
+        console.print(f"[yellow]⚠️  No encrypted files found in secrets_encrypted/[/yellow]")
+        console.print("[dim]This is normal if secrets are not encrypted yet.[/dim]")
+        pause()
+        return
+    
+    console.print(f"[cyan]Found encrypted files in: {encrypted_dir}[/cyan]\n")
+    
+    try:
+        # Run the decryption script
+        result = subprocess.run([py(), str(decrypt_script)], cwd=repo_root())
+        
+        if result.returncode == 0:
+            console.print("\n[green]✅ Secrets decrypted successfully![/green]")
+        else:
+            console.print("\n[yellow]⚠️  Decryption completed with warnings.[/yellow]")
+            
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Decryption canceled.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]❌ Error running decryption: {e}[/red]")
     
     pause()
 
@@ -961,6 +1031,10 @@ def main() -> int:
             elif choice == "16":
                 run_cleanup()
             elif choice == "17":
+                run_cookies_helper()
+            elif choice == "18":
+                run_decrypt_secrets()
+            elif choice == "19":
                 console.print("[bold yellow]Goodbye![/bold yellow]")
                 return 0
         except KeyboardInterrupt:
