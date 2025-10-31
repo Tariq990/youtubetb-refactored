@@ -138,7 +138,15 @@ def _batch_translate_books(book_names: List[str], cache: dict) -> dict:
         config_dir = repo_root / "config"
         
         # Configure Gemini model
-        model = _configure_model(config_dir)
+        model_result = _configure_model(config_dir)
+        
+        # Unpack tuple (model, api_keys)
+        if isinstance(model_result, tuple):
+            model, api_keys = model_result
+        else:
+            # Fallback for old API
+            model = model_result
+            api_keys = None
         
         if not model:
             if console:
@@ -170,7 +178,8 @@ CRITICAL: Return EXACTLY {len(uncached_books)} items in the exact same order as 
         if console:
             console.print(f"[dim]⏱️  Calling Gemini API for {len(uncached_books)} books...[/dim]")
         
-        raw = _gen(model, prompt, mime_type="application/json")
+        # Pass api_keys to _gen for fallback support
+        raw = _gen(model, prompt, api_keys=api_keys, mime_type="application/json")
         
         # Parse JSON response
         results = _json.loads(raw)
@@ -266,11 +275,19 @@ def _get_english_book_name(book_name: str, cache: dict) -> tuple:
             pass
         
         # Configure Gemini model
-        model = _configure_model(config_dir)
+        model_result = _configure_model(config_dir)
+        
+        # Unpack tuple (model, api_keys)
+        if isinstance(model_result, tuple):
+            model, api_keys = model_result
+        else:
+            # Fallback for old API
+            model = model_result
+            api_keys = None
         
         if model:
             # Get official English name from Gemini
-            english_title, author_name = _get_official_book_name(model, book_name, prompts)
+            english_title, author_name = _get_official_book_name(model, book_name, prompts, api_keys=api_keys)
             
             if english_title:
                 # Save to cache

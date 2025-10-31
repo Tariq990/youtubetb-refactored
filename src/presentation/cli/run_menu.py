@@ -635,10 +635,18 @@ def run_search():
         except Exception:
             pass
 
-        model = _configure_model(config_dir)
+        model_result = _configure_model(config_dir)
+        
+        # Unpack tuple (model, api_keys)
+        if isinstance(model_result, tuple):
+            model, api_keys = model_result
+        else:
+            model = model_result
+            api_keys = None
+        
         if model:
             console.print(f"[cyan]Getting official book name for: {query}[/cyan]")
-            book_name, author_name = _get_official_book_name(model, query, prompts)
+            book_name, author_name = _get_official_book_name(model, query, prompts, api_keys=api_keys)
 
             if book_name:
                 console.print(f"[green]✅ Book: {book_name}[/green]")
@@ -646,7 +654,7 @@ def run_search():
 
                 # Get playlist category
                 console.print(f"[cyan]Classifying book into playlist...[/cyan]")
-                playlist = _get_book_playlist(model, book_name, author_name, prompts)
+                playlist = _get_book_playlist(model, book_name, author_name, prompts, api_keys=api_keys)
                 console.print(f"[green]✅ Playlist: {playlist}[/green]")
 
                 # Check if book already exists in database

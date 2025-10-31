@@ -901,12 +901,20 @@ def _run_internal(
             pass
 
         # Configure Gemini model
-        model = _configure_model(config_dir)
+        model_result = _configure_model(config_dir)
+        
+        # Unpack tuple (model, api_keys)
+        if isinstance(model_result, tuple):
+            model, api_keys = model_result
+        else:
+            model = model_result
+            api_keys = None
+        
         if model:
             print(f"[early_meta] Getting official book name from query: {query}")
 
             # Get book name and author
-            book_name, author_name = _get_official_book_name(model, query, prompts)
+            book_name, author_name = _get_official_book_name(model, query, prompts, api_keys=api_keys)
 
             if book_name:
                 print(f"[early_meta] ✅ Book: {book_name}")
@@ -914,7 +922,7 @@ def _run_internal(
 
                 # Get playlist category
                 print(f"[early_meta] Classifying book into playlist...")
-                playlist = _get_book_playlist(model, book_name, author_name, prompts)
+                playlist = _get_book_playlist(model, book_name, author_name, prompts, api_keys=api_keys)
                 print(f"[early_meta] ✅ Playlist: {playlist}")
 
                 # CRITICAL: Check if book already exists BEFORE adding to database
