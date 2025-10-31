@@ -22,7 +22,8 @@ elevenlabs>=0.2.0
 # Media Processing
 Pillow>=10.0.0
 moviepy>=1.0.3
-# pydub>=0.25.1  # DISABLED: Incompatible with Python 3.13+ (missing audioop)
+audioop-lts>=0.2.0  # Required for pydub on Python 3.13+
+pydub>=0.25.1  # Audio processing (needs audioop-lts)
 ffmpeg-python>=0.2.0
 mutagen>=1.47.0  # MP3 metadata extraction for TTS
 numpy>=1.24.0  # Required by moviepy and whisper

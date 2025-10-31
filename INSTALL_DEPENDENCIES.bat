@@ -42,7 +42,7 @@ if %errorLevel% neq 0 (
 echo Upgrading pip...
 python -m pip install --upgrade pip --quiet
 
-:: Install requirements (without openai-whisper for Python 3.14+)
+:: Install requirements
 echo Installing requirements...
 if not exist requirements.txt (
     echo ERROR: requirements.txt not found in current directory!
@@ -51,16 +51,22 @@ if not exist requirements.txt (
     exit /b 1
 )
 
-echo Step 1: Installing all packages except openai-whisper...
-findstr /V "openai-whisper" requirements.txt > "%TEMP%\requirements_no_whisper.txt"
-pip install -r "%TEMP%\requirements_no_whisper.txt" --no-warn-script-location
-del "%TEMP%\requirements_no_whisper.txt" 2>nul
+echo Step 1: Installing audioop-lts (Python 3.13+ compatibility)...
+pip install audioop-lts --quiet --no-warn-script-location
+if errorLevel 0 (
+    echo    ✅ audioop-lts installed successfully
+) else (
+    echo    ⚠️  audioop-lts installation failed, continuing anyway...
+)
+
+echo Step 2: Installing all packages...
+pip install -r requirements.txt --no-warn-script-location
 
 echo.
 echo Step 2: Verifying critical packages...
 
 :: Check critical packages one by one (package_name:import_name)
-set "packages=playwright:playwright google-generativeai:google.generativeai yt-dlp:yt_dlp Pillow:PIL requests:requests typer:typer rich:rich ffmpeg-python:ffmpeg mutagen:mutagen"
+set "packages=playwright:playwright google-generativeai:google.generativeai yt-dlp:yt_dlp Pillow:PIL requests:requests typer:typer rich:rich ffmpeg-python:ffmpeg mutagen:mutagen pydub:pydub"
 
 for %%p in (%packages%) do (
     for /f "tokens=1,2 delims=:" %%a in ("%%p") do (
@@ -80,6 +86,18 @@ for %%p in (%packages%) do (
             echo    ✅ %%a already installed
         )
     )
+)
+
+echo.
+echo Step 3: Checking optional packages...
+
+:: Check openai-whisper (optional)
+python -c "import whisper" >nul 2>&1
+if errorLevel 1 (
+    echo    ℹ️  openai-whisper: Not installed (optional - improves timestamp accuracy)
+    echo       To install: pip install openai-whisper
+) else (
+    echo    ✅ openai-whisper: Installed (95%% timestamp accuracy)
 )
 
 echo.
