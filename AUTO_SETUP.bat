@@ -73,16 +73,16 @@ if exist "%FOLDER%\.git" (
 echo ✅ Repository ready.
 echo.
 
-:: STEP 5: Run internal setup (SETUP_ALL.bat)
-if not exist "SETUP_ALL.bat" (
-    echo ❌ SETUP_ALL.bat not found in project folder.
+:: STEP 5: Run internal setup (QUICK_FIX.bat - simpler and more reliable)
+if not exist "QUICK_FIX.bat" (
+    echo ❌ QUICK_FIX.bat not found in project folder.
     pause
     exit /b 1
 )
 
-echo 🧩 Running internal setup...
+echo 🧩 Running quick setup (dependencies only)...
 echo.
-call SETUP_ALL.bat
+call QUICK_FIX.bat
 
 echo.
 echo ==========================================================
