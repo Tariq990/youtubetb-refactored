@@ -53,8 +53,23 @@ def _load_all_youtube_api_keys():
     if env_key:
         api_keys.append(env_key.strip())
     
-    # 2. Multi-key file (api_keys.txt)
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    
+    # 2. Dedicated YouTube folder (PRIORITY - matches cookies_helper.py)
+    youtube_keys_file = os.path.join(base_dir, "secrets", "youtube", "api_keys.txt")
+    if os.path.exists(youtube_keys_file):
+        try:
+            with open(youtube_keys_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        key = line.split('#')[0].strip()
+                        if key and key not in api_keys:
+                            api_keys.append(key)
+        except Exception:
+            pass
+    
+    # 3. Shared multi-key file (api_keys.txt) - fallback
     api_keys_file = os.path.join(base_dir, "secrets", "api_keys.txt")
     if os.path.exists(api_keys_file):
         try:
@@ -372,15 +387,38 @@ def main(query: str | None = None, output_dir: os.PathLike | None = None):
                 safe_print(f"Title: {best['title']} | URL: {best['url']}")
                 return best
             
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.HTTPError as e:
+            # Enhanced error reporting for 400/403/etc
+            status_code = e.response.status_code if e.response else "unknown"
             error_msg = str(e)
-            print(f"⚠️  API key {key_idx}/{len(API_KEYS)}: Request error - {error_msg[:100]}")
+            
+            # Try to extract detailed error message from response
+            try:
+                error_data = e.response.json() if e.response else {}
+                detailed_msg = error_data.get("error", {}).get("message", "")
+                if detailed_msg:
+                    error_msg = f"{status_code}: {detailed_msg}"
+            except:
+                pass
+            
+            print(f"⚠️  YouTube API key {key_idx}/{len(API_KEYS)} failed: {error_msg[:150]}")
             last_error = e
             if key_idx < len(API_KEYS):
                 print(f"   Trying next API key...")
                 continue
             else:
-                print(f"❌ All {len(API_KEYS)} API key(s) failed!")
+                print(f"❌ All {len(API_KEYS)} YouTube API key(s) failed!")
+                return None
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = str(e)
+            print(f"⚠️  YouTube API key {key_idx}/{len(API_KEYS)}: Request error - {error_msg[:100]}")
+            last_error = e
+            if key_idx < len(API_KEYS):
+                print(f"   Trying next API key...")
+                continue
+            else:
+                print(f"❌ All {len(API_KEYS)} YouTube API key(s) failed!")
                 return None
         
         except Exception as e:

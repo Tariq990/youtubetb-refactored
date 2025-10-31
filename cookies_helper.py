@@ -108,21 +108,25 @@ COOKIES_PATHS = [
     REPO_ROOT / "cookies.txt"
 ]
 
-# API key file paths by type
+# API key file paths by type (FIXED v2.3.1 - 2025-10-31)
 API_KEYS_PATHS = {
     "gemini": [
-        SECRETS_DIR / "api_keys.txt",
-        SECRETS_DIR / "api_key.txt",
-        SECRETS_DIR / ".env"
+        SECRETS_DIR / "api_keys.txt",          # Priority 1: Main file (3 working keys ✅)
+        SECRETS_DIR / "gemini" / "api_keys.txt",  # Priority 2: Subfolder
+        SECRETS_DIR / "api_key.txt",           # Priority 3: Alternative
+        SECRETS_DIR / "gemini" / "api_key.txt",   # Priority 4: Subfolder alt
+        SECRETS_DIR / ".env"                   # Priority 5: Env (some keys fail)
     ],
     "youtube": [
-        SECRETS_DIR / "api_keys.txt",
-        SECRETS_DIR / ".env"
+        SECRETS_DIR / "youtube" / "api_keys.txt",  # Priority 1: CORRECT location (3 keys ✅)
+        SECRETS_DIR / "api_keys.txt",          # Priority 2: Shared file
+        SECRETS_DIR / ".env"                   # Priority 3: Env fallback
     ],
     "pexels": [
-        SECRETS_DIR / "pexels_key.txt",
-        SECRETS_DIR / ".env",
-        SECRETS_DIR / "api_keys.txt"
+        SECRETS_DIR / "pexels_key.txt",        # Priority 1: Dedicated file
+        SECRETS_DIR / "pexels" / "api_key.txt",   # Priority 2: Subfolder
+        SECRETS_DIR / ".env",                  # Priority 3: Env
+        SECRETS_DIR / "api_keys.txt"           # Priority 4: Shared
     ]
 }
 
@@ -498,7 +502,7 @@ def test_gemini_api(api_key):
     
     try:
         genai.configure(api_key=api_key)  # type: ignore
-        model = genai.GenerativeModel('gemini-2.5-flash')  # type: ignore
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')  # type: ignore
         
         start = time.time()
         response = model.generate_content("Reply: 'API key works'")
@@ -507,7 +511,7 @@ def test_gemini_api(api_key):
         if response and response.text:
             logging.info(f"Gemini API test passed: {elapsed:.1f}s")
             return True, "API key works", {
-                "model": "gemini-2.5-flash",
+                "model": "gemini-2.0-flash-exp",
                 "response_time": round(elapsed, 1)
             }
         
@@ -515,14 +519,18 @@ def test_gemini_api(api_key):
         return False, "Empty response", {}
         
     except Exception as e:
-        error = str(e).upper()
+        error = str(e)
         logging.error(f"Gemini API test failed: {e}")
         
-        if "QUOTA_EXCEEDED" in error or "QUOTA EXCEEDED" in error:
+        # Better error detection
+        if "quota" in error.lower() or "429" in error:
             return False, "QUOTA_EXCEEDED", {}
-        elif "API_KEY_INVALID" in error or "INVALID" in error:
+        elif "invalid" in error.lower() or "401" in error:
             return False, "API_KEY_INVALID", {}
-        elif "PERMISSION_DENIED" in error:
+        elif "403" in error:
+            # Check if it's "API not enabled" error
+            if "has not been used" in error or "not enabled" in error.lower():
+                return False, "API_NOT_ENABLED", {}
             return False, "PERMISSION_DENIED", {}
         return False, f"Error: {str(e)[:50]}", {}
 
@@ -1317,16 +1325,24 @@ def add_youtube_api():
     
     # Choose location
     print("\nWhere to save?")
-    print("  [1] secrets/api_keys.txt (recommended)")
-    print("  [2] secrets/.env (YT_API_KEY=...)")
+    print("  [1] secrets/youtube/api_keys.txt (recommended - dedicated)")
+    print("  [2] secrets/api_keys.txt (shared with Gemini)")
+    print("  [3] secrets/.env (YT_API_KEY=...)")
     print("  [0] Cancel")
     
-    choice = input("\nChoice [1/2/0] (default: 1): ").strip() or '1'
+    choice = input("\nChoice [1/2/3/0] (default: 1): ").strip() or '1'
     
     if choice == '1':
-        path = SECRETS_DIR / "api_keys.txt"
+        # Dedicated YouTube folder (matches API_KEYS_PATHS priority)
+        path = SECRETS_DIR / "youtube" / "api_keys.txt"
+        # Ensure youtube folder exists
+        path.parent.mkdir(parents=True, exist_ok=True)
         success, message = append_to_api_keys(path, key)
     elif choice == '2':
+        # Shared file (fallback)
+        path = SECRETS_DIR / "api_keys.txt"
+        success, message = append_to_api_keys(path, key)
+    elif choice == '3':
         success, message = update_env_file("YT_API_KEY", key)
     else:
         print("❌ Cancelled")
@@ -1561,10 +1577,46 @@ def check_youtube_status(test_mode):
     quota_exceeded = 0
     invalid = 0
     
-    # Check api_keys.txt
+    # Priority 1: Check secrets/youtube/api_keys.txt (CORRECT location)
+    youtube_path = SECRETS_DIR / "youtube" / "api_keys.txt"
+    if youtube_path.exists():
+        print(f"\n  📂 youtube/api_keys.txt:")
+        keys = []
+        for line in youtube_path.read_text(encoding='utf-8').splitlines():
+            line = line.strip()
+            if line and not line.startswith('#'):
+                key = line.split('#')[0].strip()
+                if key and len(key) == 39:
+                    keys.append(key)
+        
+        if keys:
+            print(f"    Found {len(keys)} key(s)")
+            for idx, key in enumerate(keys, 1):
+                print(f"\n    Key {idx}: {mask_key(key)}")
+                
+                if test_mode == 'full':
+                    success, message, quota = test_youtube_api(key)
+                    if success:
+                        print(f"      ✅ ACTIVE - {message}")
+                        working += 1
+                    elif message == "QUOTA_EXCEEDED":
+                        print(f"      ⚠️  QUOTA EXCEEDED")
+                        quota_exceeded += 1
+                    else:
+                        print(f"      ❌ INVALID - {message}")
+                        invalid += 1
+                else:
+                    print(f"      🔒 FORMAT VALID (not tested)")
+        else:
+            print(f"    ⚠️  File exists but empty")
+    else:
+        print(f"\n  ❌ youtube/api_keys.txt - NOT FOUND")
+        print(f"     💡 Tip: Copy keys from api_keys.txt to youtube/api_keys.txt")
+    
+    # Priority 2: Check api_keys.txt (shared)
     api_keys_path = SECRETS_DIR / "api_keys.txt"
     if api_keys_path.exists():
-        # Parse keys and strip inline comments
+        print(f"\n  📂 api_keys.txt (shared):")
         keys = []
         for line in api_keys_path.read_text().splitlines():
             line = line.strip()
@@ -1579,23 +1631,23 @@ def check_youtube_status(test_mode):
             if len(key) != 39:
                 continue
                 
-            print(f"\n  Key {idx}: {mask_key(key)}")
+            print(f"\n    Key {idx}: {mask_key(key)}")
             
             if test_mode == 'full':
                 success, message, quota = test_youtube_api(key)
                 if success:
-                    print(f"    ✅ ACTIVE - {message}")
+                    print(f"      ✅ ACTIVE - {message}")
                     if quota:
-                        print(f"       {quota}")
+                        print(f"         {quota}")
                     working += 1
                 elif message == "QUOTA_EXCEEDED":
-                    print(f"    ⚠️  QUOTA EXCEEDED")
+                    print(f"      ⚠️  QUOTA EXCEEDED")
                     quota_exceeded += 1
                 else:
-                    print(f"    ❌ INVALID - {message}")
+                    print(f"      ❌ INVALID - {message}")
                     invalid += 1
             else:
-                print(f"    🔒 FORMAT VALID (not tested)")
+                print(f"      🔒 FORMAT VALID (not tested)")
     
     # Check .env
     env_path = SECRETS_DIR / ".env"
@@ -1624,8 +1676,12 @@ def check_youtube_status(test_mode):
     print(f"    ✅ Working: {working}")
     print(f"    ⚠️  Quota exceeded: {quota_exceeded}")
     print(f"    ❌ Invalid: {invalid}")
-    if invalid > 0:
-        print(f"    💡 Recommendation: Remove invalid keys from api_keys.txt")
+    
+    if working == 0:
+        print(f"\n    ⚠️  WARNING: No working YouTube API keys found!")
+        print(f"    💡 Fix: Ensure keys exist in youtube/api_keys.txt")
+    elif invalid > 0:
+        print(f"    💡 Recommendation: Remove invalid keys")
 
 def check_pexels_status(test_mode):
     """Check Pexels API keys"""

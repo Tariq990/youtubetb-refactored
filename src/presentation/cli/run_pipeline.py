@@ -569,7 +569,22 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
             if env_key:
                 yt_keys.append(env_key.strip())
             
-            # 2. Load from api_keys.txt (multiple keys)
+            # 2. Load from dedicated YouTube folder (PRIORITY - matches cookies_helper.py)
+            youtube_keys_path = repo_root / "secrets" / "youtube" / "api_keys.txt"
+            if youtube_keys_path.exists():
+                try:
+                    content = youtube_keys_path.read_text(encoding="utf-8")
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            # Remove inline comments
+                            key = line.split('#')[0].strip()
+                            if key and key not in yt_keys:  # Avoid duplicates
+                                yt_keys.append(key)
+                except Exception:
+                    pass
+            
+            # 3. Load from shared api_keys.txt (fallback)
             api_keys_path = repo_root / "secrets" / "api_keys.txt"
             if api_keys_path.exists():
                 try:
@@ -577,11 +592,14 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                     for line in content.splitlines():
                         line = line.strip()
                         if line and not line.startswith("#"):
-                            yt_keys.append(line)
+                            # Remove inline comments
+                            key = line.split('#')[0].strip()
+                            if key and key not in yt_keys:  # Avoid duplicates
+                                yt_keys.append(key)
                 except Exception:
                     pass
             
-            # 3. Fallback to single api_key.txt
+            # 4. Fallback to single api_key.txt
             if not yt_keys:
                 single_key = _discover_yt_api_key(repo_root)
                 if single_key:
@@ -605,7 +623,16 @@ def _preflight_check(run_root: Path, config_dir: Path, combined_log: Path | None
                             print(f"⚠️  YouTube API key {i}/{len(yt_keys)}: Quota exceeded, trying next...")
                             continue
                         else:
-                            print(f"⚠️  YouTube API key {i}/{len(yt_keys)} failed: {r.status_code}")
+                            # Enhanced error reporting - show detailed error message
+                            error_msg = f"{r.status_code}"
+                            try:
+                                error_data = r.json()
+                                detailed = error_data.get("error", {}).get("message", "")
+                                if detailed:
+                                    error_msg = f"{r.status_code}: {detailed[:100]}"
+                            except:
+                                pass
+                            print(f"⚠️  YouTube API key {i}/{len(yt_keys)} failed: {error_msg}")
                             continue
                     except Exception as e:
                         print(f"⚠️  YouTube API key {i}/{len(yt_keys)} error: {str(e)[:100]}")

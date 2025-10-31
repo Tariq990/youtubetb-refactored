@@ -99,6 +99,130 @@ def _save_book_names_cache(cache: dict) -> None:
             print(f"⚠️ Could not save cache: {e}")
 
 
+def _batch_translate_books(book_names: List[str], cache: dict) -> dict:
+    """
+    Translate multiple book names in a SINGLE Gemini API call.
+    
+    CRITICAL OPTIMIZATION (v2.3.1):
+    - OLD: 20 books = 20 separate Gemini calls
+    - NEW: 20 books = 1 single Gemini call (19 API calls saved!)
+    
+    Args:
+        book_names: List of book names to translate (Arabic/English mix)
+        cache: Translation cache dictionary
+    
+    Returns:
+        Dictionary mapping book_name -> {english, author}
+    """
+    import json as _json
+    
+    # Filter out books already in cache
+    uncached_books = [b for b in book_names if b not in cache]
+    
+    if not uncached_books:
+        if console:
+            console.print("[dim]💾 All books found in cache - no translation needed[/dim]")
+        return {}
+    
+    # Display what we're translating
+    if console:
+        console.print(f"\n[cyan]🔄 Batch translating {len(uncached_books)} books in 1 API call...[/cyan]")
+    else:
+        print(f"\n🔄 Batch translating {len(uncached_books)} books in 1 API call...")
+    
+    try:
+        from src.infrastructure.adapters.process import _configure_model
+        
+        # Get repo root and config
+        repo_root = Path(__file__).resolve().parents[3]
+        config_dir = repo_root / "config"
+        
+        # Configure Gemini model
+        model = _configure_model(config_dir)
+        
+        if not model:
+            if console:
+                console.print("[yellow]⚠️  Gemini not configured, using original names[/yellow]")
+            return {}
+        
+        # Create batch translation prompt
+        books_json = _json.dumps(uncached_books, ensure_ascii=False, indent=2)
+        
+        prompt = f"""Extract the official English book titles and authors for these books.
+Return a JSON array with EXACTLY {len(uncached_books)} objects in the SAME ORDER.
+
+Books to translate:
+{books_json}
+
+Return JSON format:
+[
+  {{"original": "العادات الذرية", "book_name": "Atomic Habits", "author_name": "James Clear"}},
+  {{"original": "الأب الغني", "book_name": "Rich Dad Poor Dad", "author_name": "Robert Kiyosaki"}},
+  ...
+]
+
+CRITICAL: Return EXACTLY {len(uncached_books)} items in the exact same order as input.
+"""
+        
+        # Call Gemini with timeout
+        from src.infrastructure.adapters.process import _gen
+        
+        if console:
+            console.print(f"[dim]⏱️  Calling Gemini API for {len(uncached_books)} books...[/dim]")
+        
+        raw = _gen(model, prompt, mime_type="application/json")
+        
+        # Parse JSON response
+        results = _json.loads(raw)
+        
+        if not isinstance(results, list):
+            raise ValueError("Expected JSON array from Gemini")
+        
+        if len(results) != len(uncached_books):
+            if console:
+                console.print(f"[yellow]⚠️  Warning: Gemini returned {len(results)} items, expected {len(uncached_books)}[/yellow]")
+        
+        # Update cache with results
+        new_translations = {}
+        for i, book_name in enumerate(uncached_books):
+            if i < len(results):
+                result = results[i]
+                english_title = result.get("book_name", book_name)
+                author_name = result.get("author_name")
+                
+                # Add to cache
+                cache[book_name] = {
+                    "english": english_title,
+                    "author": author_name
+                }
+                new_translations[book_name] = cache[book_name]
+        
+        # Save updated cache
+        _save_book_names_cache(cache)
+        
+        # Show success
+        if console:
+            console.print(f"[green]✅ Batch translated {len(new_translations)}/{len(uncached_books)} books successfully![/green]")
+        else:
+            print(f"✅ Batch translated {len(new_translations)}/{len(uncached_books)} books successfully!")
+        
+        # Show translations
+        for book_name, data in new_translations.items():
+            if console:
+                console.print(f"[dim]   {book_name} → {data['english']}[/dim]")
+        
+        return new_translations
+        
+    except Exception as e:
+        if console:
+            console.print(f"[red]❌ Batch translation error: {e}[/red]")
+            console.print(f"[yellow]⚠️  Falling back to individual translations...[/yellow]")
+        else:
+            print(f"❌ Batch translation error: {e}")
+            print("⚠️ Falling back to individual translations...")
+        return {}
+
+
 def _get_english_book_name(book_name: str, cache: dict) -> tuple:
     """
     Get English book name and author, using cache when available.
@@ -319,11 +443,21 @@ def check_book_status(book_name: str, cache: dict) -> Dict:
             # else: status is unknown/new → continue to get full metadata from Gemini
     
     # NOT in cache OR NOT in database OR status is "new"
-    # NOW call Gemini to get full metadata (translation + author)
-    english_title, gemini_author = _get_english_book_name(input_title, cache)
+    # With v2.3.1 batch translation, cache should ALWAYS have data now
+    # But keep fallback for safety
+    if input_title not in cache:
+        # This should rarely happen now (only if batch translation failed)
+        if console:
+            console.print(f"[yellow]⚠️  {input_title} not in cache, translating individually...[/yellow]")
+        english_title, gemini_author = _get_english_book_name(input_title, cache)
+    else:
+        # Use cached data (99% of cases with batch translation)
+        english_title = cache[input_title]["english"]
+        gemini_author = cache[input_title].get("author")
     
     # Prefer input author over Gemini author
     author = input_author if input_author else gemini_author
+
     
     # Check database again with Gemini translation
     book_info = check_book_exists(english_title, author)
@@ -623,6 +757,15 @@ def process_books_batch(
     
     log_batch(f"📝 Cache loaded: {cache_size} translations")
     
+    # Step 2.5: BATCH TRANSLATE all uncached books in ONE API call (v2.3.1 optimization)
+    # This saves 19 API calls if processing 20 books!
+    if console:
+        console.print("\n[cyan]🚀 Batch translating all books (1 API call)...[/cyan]")
+    else:
+        print("\n🚀 Batch translating all books (1 API call)...")
+    
+    _batch_translate_books(books, book_names_cache)
+    
     # Step 3: Analyze all books first
     if console:
         console.print("\n[cyan]📊 Analyzing books status...[/cyan]")
@@ -633,6 +776,7 @@ def process_books_batch(
     for book_name in books:
         status = check_book_status(book_name, book_names_cache)
         books_status.append(status)
+
     
     # Display plan
     print_book_status_table(books_status)
