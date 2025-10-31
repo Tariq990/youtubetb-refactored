@@ -40,18 +40,28 @@ echo Installing requirements...
 if exist requirements.txt (
     echo Step 1: Installing all packages except openai-whisper...
     findstr /V "openai-whisper" requirements.txt > "%TEMP%\requirements_no_whisper.txt"
-    pip install -r "%TEMP%\requirements_no_whisper.txt"
+    pip install -r "%TEMP%\requirements_no_whisper.txt" --no-warn-script-location
     del "%TEMP%\requirements_no_whisper.txt" 2>nul
     
     echo.
-    echo Step 2: Verifying and installing missing packages...
+    echo Step 2: Verifying and installing missing packages individually...
     
-    :: Check critical packages one by one
-    for %%p in (playwright pydub google-generativeai yt-dlp Pillow requests typer rich) do (
+    :: Check critical packages one by one and install if missing
+    for %%p in (playwright pydub google-generativeai yt-dlp Pillow requests typer rich ffmpeg-python) do (
         python -c "import %%p" >nul 2>&1
         if errorLevel 1 (
-            echo    Installing %%p...
-            pip install %%p --quiet
+            echo    ❌ Missing: %%p - Installing now...
+            pip install %%p
+            
+            :: Verify installation
+            python -c "import %%p" >nul 2>&1
+            if errorLevel 1 (
+                echo       ⚠️  Failed to install %%p - may need manual installation
+            ) else (
+                echo       ✅ %%p installed successfully
+            )
+        ) else (
+            echo    ✅ %%p already installed
         )
     )
 ) else (
