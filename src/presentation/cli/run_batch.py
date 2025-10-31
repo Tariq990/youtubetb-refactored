@@ -346,10 +346,60 @@ def process_books_batch(
     
     log_batch(f"🚀 BATCH STARTED: {len(books)} books")
     
-    # Step 0: Ensure database is synced (auto-sync from YouTube if empty)
+    # Step 0: Validate APIs ONCE at the beginning (not per book)
+    if console:
+        console.print("\n[cyan]🔐 Validating system & API keys (one-time check)...[/cyan]")
+    else:
+        print("\n🔐 Validating system & API keys (one-time check)...")
+    
+    try:
+        from src.infrastructure.adapters.api_validator import validate_apis_before_run
+        
+        if not validate_apis_before_run():
+            if console:
+                console.print("\n[bold red]❌ System validation failed![/bold red]")
+                console.print("[yellow]Fix the issues and try again.[/yellow]")
+                console.print("[dim]Hint: Run Option 0 for detailed diagnostics[/dim]\n")
+            else:
+                print("\n❌ System validation failed!")
+                print("Fix the issues and try again.")
+                print("Hint: Run Option 0 for detailed diagnostics\n")
+            
+            log_batch("❌ BATCH ABORTED: API validation failed")
+            return {
+                "total": len(books),
+                "success": [],
+                "failed": [],
+                "skipped": books,
+                "resumed": []
+            }
+        
+        if console:
+            console.print("[green]✅ All APIs validated successfully![/green]")
+        else:
+            print("✅ All APIs validated successfully!")
+        
+        log_batch("✅ API validation passed")
+        
+    except Exception as e:
+        if console:
+            console.print(f"[red]❌ Validation error: {e}[/red]")
+        else:
+            print(f"❌ Validation error: {e}")
+        
+        log_batch(f"❌ BATCH ABORTED: Validation error - {e}")
+        return {
+            "total": len(books),
+            "success": [],
+            "failed": [],
+            "skipped": books,
+            "resumed": []
+        }
+    
+    # Step 1: Ensure database is synced (auto-sync from YouTube if empty)
     _ensure_database_synced()
     
-    # Step 1: Analyze all books first
+    # Step 2: Analyze all books first
     if console:
         console.print("\n[cyan]📊 Analyzing books status...[/cyan]")
     else:
@@ -385,7 +435,7 @@ def process_books_batch(
         print(f"   Resume: {to_resume}")
         print(f"   Process: {to_process}")
     
-    # Step 2: Process books
+    # Step 3: Process books
     for idx, (book_name, book_status) in enumerate(zip(books, books_status), start=1):
         action = book_status["action"]
         title = book_status["title"]
@@ -440,7 +490,8 @@ def process_books_batch(
             
             cmd = [
                 sys.executable, "-m", "src.presentation.cli.run_pipeline",
-                pipeline_input
+                pipeline_input,
+                "--skip-api-check"  # Skip API check since we already validated once
             ]
             
             # Add auto-continue flag if batch is in auto mode
