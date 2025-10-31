@@ -77,8 +77,10 @@ if %errorLevel% neq 0 (
     )
 )
 
-for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYTHON_VER=%%v
-echo    ✅ Python %PYTHON_VER% detected
+python --version > "%TEMP%\pyver.txt" 2>&1
+set /p PYTHON_VER=<"%TEMP%\pyver.txt"
+del "%TEMP%\pyver.txt" 2>nul
+echo    ✅ %PYTHON_VER% detected
 echo    ℹ️  Any Python version accepted (no restrictions)
 echo.
 
