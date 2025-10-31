@@ -144,12 +144,11 @@ def header() -> None:
     t.add_row("12", "Upload to YouTube (requires secrets/client_secret.json)")
     t.add_row("13", "Resume pipeline from last successful stage")
     t.add_row("14", "🔄 Sync Database from YouTube Channel")
-    t.add_row("15", "🔑 Manage API Keys (Add/Test YouTube & Gemini keys)")
-    t.add_row("16", "🗑️ Clean Up (Delete runs, tmp, database, pexels)")
-    t.add_row("17", "🍪 Cookies & API Helper (JSON→Netscape, Test APIs)")
-    t.add_row("18", "🔓 Decrypt Secrets (For deployment on new machines)")
-    t.add_row("19", "🔄 Force Pull from GitHub (Overwrite local changes)")
-    t.add_row("20", "Exit")
+    t.add_row("15", "️ Clean Up (Delete runs, tmp, database, pexels)")
+    t.add_row("16", "🍪 Cookies & API Helper (JSON→Netscape, Test APIs)")
+    t.add_row("17", "🔓 Decrypt Secrets (For deployment on new machines)")
+    t.add_row("18", "🔄 Force Pull from GitHub (Overwrite local changes)")
+    t.add_row("19", "Exit")
     console.print(t)
 
 
@@ -506,49 +505,6 @@ def run_force_pull():
         console.print("[red]❌ Git not found. Make sure Git is installed and in PATH.[/red]")
     except Exception as e:
         console.print(f"[red]❌ Error during force pull: {e}[/red]")
-    
-    pause()
-
-
-def run_api_key_manager():
-    """Run the Smart API Key Manager"""
-    console.clear()
-    console.rule("[bold cyan]🔑 Smart API Key Manager")
-    
-    console.print("[dim]Test, add, and manage YouTube & Gemini API keys[/dim]\n")
-    
-    import subprocess
-    from pathlib import Path
-    
-    # Get path to add_api_key.py script
-    repo_root = Path(__file__).resolve().parents[3]
-    script_path = repo_root / "scripts" / "add_api_key.py"
-    
-    if not script_path.exists():
-        console.print(f"[red]❌ Script not found: {script_path}[/red]")
-        console.print(f"[yellow]Expected location: scripts/add_api_key.py[/yellow]")
-        pause()
-        return
-    
-    try:
-        # Run the add_api_key.py script
-        console.print(f"[cyan]Launching API Key Manager...[/cyan]\n")
-        console.print("="*60)
-        
-        result = subprocess.run(
-            ["python", str(script_path)],
-            cwd=repo_root
-        )
-        
-        console.print("\n" + "="*60)
-        
-        if result.returncode == 0:
-            console.print(f"[green]✅ API Key Manager completed successfully[/green]")
-        else:
-            console.print(f"[yellow]⚠️  API Key Manager exited with code {result.returncode}[/yellow]")
-            
-    except Exception as e:
-        console.print(f"[red]❌ Error running API Key Manager: {e}[/red]")
     
     pause()
 
@@ -977,7 +933,7 @@ def main() -> int:
     while True:
         console.clear()
         header()
-        choice = Prompt.ask("Choose", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"], default="1")
+        choice = Prompt.ask("Choose", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"], default="1")
         console.rule(style="dim")
         try:
             if choice == "0":
@@ -1111,16 +1067,14 @@ def main() -> int:
             elif choice == "14":
                 run_youtube_sync()
             elif choice == "15":
-                run_api_key_manager()
-            elif choice == "16":
                 run_cleanup()
-            elif choice == "17":
+            elif choice == "16":
                 run_cookies_helper()
-            elif choice == "18":
+            elif choice == "17":
                 run_decrypt_secrets()
-            elif choice == "19":
+            elif choice == "18":
                 run_force_pull()
-            elif choice == "20":
+            elif choice == "19":
                 console.print("[bold yellow]Goodbye![/bold yellow]")
                 return 0
         except KeyboardInterrupt:
