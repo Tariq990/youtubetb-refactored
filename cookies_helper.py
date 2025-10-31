@@ -738,24 +738,32 @@ def append_to_api_keys(path, key):
     Returns:
         tuple: (success, message)
     """
-    # Read existing
+    # Read existing keys (clean comments and inline comments)
     existing = []
     if path.exists():
-        existing = [k.strip() for k in path.read_text().splitlines() if k.strip()]
+        for line in path.read_text(encoding='utf-8').splitlines():
+            line = line.strip()
+            # Skip empty lines and full-line comments
+            if not line or line.startswith('#'):
+                continue
+            # Remove inline comments (split on #)
+            clean_key = line.split('#')[0].strip()
+            if clean_key:
+                existing.append(clean_key)
     
-    # Deduplicate
+    # Deduplicate - check if key already exists
     if key in existing:
         logging.warning(f"Key already exists in {path}")
-        return False, "Key already exists"
+        return False, "⚠️  Key already exists in file"
     
-    # Append
+    # Append new key
     existing.append(key)
     content = "\n".join(existing) + "\n"
     
     success, error = save_to_file(path, content)
     if success:
         logging.info(f"Appended key to {path}")
-        return True, f"Saved to {path.name}"
+        return True, f"✅ Saved to {path.name}"
     return False, error
 
 def update_env_file(var_name, value):
