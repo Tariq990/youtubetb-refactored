@@ -6,6 +6,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 echo ==========================================================
 echo       🚀 YouTubeTB - Install From Zero
 echo       (Complete Setup for New Systems)
+echo       Python Version: 3.13.7 (compatible with openai-whisper)
 echo ==========================================================
 echo.
 
@@ -51,8 +52,9 @@ echo ✅ Chocolatey ready.
 echo.
 
 :: STEP 3: Install required tools (Git, Python, FFmpeg)
-echo 📦 Installing Git, Python, and FFmpeg (if missing)...
-choco install git python ffmpeg -y --no-progress
+echo 📦 Installing Git, Python 3.13, and FFmpeg (if missing)...
+echo    ℹ️  Installing Python 3.13.7 (compatible with openai-whisper)
+choco install git python --version=3.13.7 ffmpeg -y --no-progress
 
 :: Refresh PATH to recognize new tools
 call :RefreshPath
