@@ -228,8 +228,31 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", api_keys: Optional[l
                     print(f"🔄 Switching to API key {key_idx + 2}/{len(api_keys)}")
                     continue
                 else:
-                    print(f"❌ All {len(api_keys)} API keys exhausted!")
-                    return ""
+                    # All keys quota exceeded - STOP immediately
+                    import datetime
+                    now = datetime.datetime.utcnow()
+                    next_reset = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                    time_remaining = next_reset - now
+                    hours = int(time_remaining.total_seconds() // 3600)
+                    minutes = int((time_remaining.total_seconds() % 3600) // 60)
+                    
+                    print(f"\n{'='*60}")
+                    print(f"❌ QUOTA EXHAUSTED: All {len(api_keys)} API keys exceeded daily quota!")
+                    print(f"{'='*60}")
+                    print(f"\n📊 Gemini Free Tier Limits:")
+                    print(f"   • 1,500 requests per day per key")
+                    print(f"   • 15 requests per minute per key")
+                    print(f"\n⏰ Quota resets in: {hours}h {minutes}m (at 00:00 UTC)")
+                    print(f"\n💡 Solutions:")
+                    print(f"   1. ⏱️  Wait {hours}h {minutes}m for automatic quota reset")
+                    print(f"   2. 🔑 Add more API keys: https://makersuite.google.com/app/apikey")
+                    print(f"   3. 💳 Upgrade to Gemini API paid tier")
+                    print(f"\n{'='*60}\n")
+                    
+                    raise RuntimeError(
+                        f"QUOTA_EXHAUSTED: All {len(api_keys)} Gemini API keys exceeded daily quota (1,500 requests/day). "
+                        f"Quota resets at 00:00 UTC (in {hours}h {minutes}m). Please wait or add more keys."
+                    )
             else:
                 print(f"API call failed: {e}")
                 return ""
