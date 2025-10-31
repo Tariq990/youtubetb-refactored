@@ -55,5 +55,6 @@ echo ========================================
 echo ✅ Installation Complete!
 echo ========================================
 echo.
-echo Now run: run.bat
-pause
+echo 🚀 Starting the program automatically...
+timeout /t 2 /nobreak >nul
+call run.bat
