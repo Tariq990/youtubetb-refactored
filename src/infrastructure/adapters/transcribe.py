@@ -571,13 +571,16 @@ def main(
 
     for method in methods:
         if method == 'yt-dlp':
-            for attempt in range(1, attempts + 1):
-                print(f"Method yt-dlp attempt {attempt}/{attempts}")
+            # REDUCED: 3 attempts instead of 10 to avoid excessive retries
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                print(f"Method yt-dlp attempt {attempt}/{max_attempts}")
                 vtt, info_title = run_yt_dlp_download_subs(url, vid, cookies, force_lang, prefer_title=prefer_title)
                 
                 # ===== AUTO-RETRY WITH FALLBACK COOKIES ON FAILURE =====
                 # If download failed and we have backup cookies, try them
-                if not vtt and current_cookie_index < max_cookie_retries - 1:
+                # BUT: Only try cookies fallback on FIRST attempt to avoid nested loops
+                if not vtt and attempt == 1 and current_cookie_index < max_cookie_retries - 1:
                     print(f"    🔄 Primary cookies failed - trying backup cookies...")
                     
                     # Try each remaining backup cookies file
@@ -601,6 +604,10 @@ def main(
                         if vtt:
                             print(f"    ✅ Success with backup cookies {retry_idx + 1}!")
                             break  # Success - continue with this cookies file
+                        
+                        # Delay between cookie attempts (avoid rapid-fire)
+                        if retry_idx < max_cookie_retries - 1:
+                            time.sleep(10)  # 10s between different cookies
                     else:
                         # All cookies failed
                         if max_cookie_retries > 0:
@@ -615,20 +622,29 @@ def main(
                         result = text
                         used_title = info_title
                         break
-                # Exponential backoff: 5s, 10s, 15s, 20s...
-                time.sleep(5 * attempt)
+                
+                # Exponential backoff: 10s, 20s, 30s (increased from 5x)
+                if attempt < max_attempts:
+                    delay = 10 * attempt
+                    print(f"    ⏳ Waiting {delay}s before retry...")
+                    time.sleep(delay)
             if result:
                 print("Success with yt-dlp")
                 break
         else:
-            for attempt in range(1, attempts + 1):
-                print(f"Method {method} attempt {attempt}/{attempts}")
+            # REDUCED: 3 attempts instead of 10 for youtube-transcript-api
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                print(f"Method {method} attempt {attempt}/{max_attempts}")
                 text = method_youtube_transcript_api(vid, cookies)
                 if text and text.strip():
                     result = text
                     break
-                # Exponential backoff: 5s, 10s, 15s...
-                time.sleep(5 * attempt)
+                # Exponential backoff: 10s, 20s, 30s (increased from 5x)
+                if attempt < max_attempts:
+                    delay = 10 * attempt
+                    print(f"    ⏳ Waiting {delay}s before retry...")
+                    time.sleep(delay)
             if result:
                 print(f"Success with {method}")
                 break
