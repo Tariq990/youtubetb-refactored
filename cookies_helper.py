@@ -1111,7 +1111,7 @@ def add_cookies():
             
             slot = oldest  # Use the now-empty slot
     
-    # Save
+    # Smart merge: Check if existing file has Amazon cookies
     print(f"\n💾 Saving to: {slot}...")
     
     # Ensure final_content exists before saving
@@ -1119,12 +1119,83 @@ def add_cookies():
         print("❌ No content to save")
         return
     
-    success, error = save_to_file(slot, final_content)
+    # Check what domains we have in new cookies
+    new_lines = final_content.splitlines()
+    new_youtube = any('youtube.com' in line or 'google.com' in line for line in new_lines if not line.startswith('#'))
+    new_amazon = any('amazon.com' in line for line in new_lines if not line.startswith('#'))
+    
+    # If slot exists, check what it has
+    merged_content = final_content
+    if slot.exists() and slot.stat().st_size > 100:
+        print("\n🔍 Checking existing cookies...")
+        existing_content = slot.read_text(encoding='utf-8', errors='replace')
+        existing_lines = existing_content.splitlines()
+        
+        existing_youtube = any('youtube.com' in line or 'google.com' in line for line in existing_lines if not line.startswith('#'))
+        existing_amazon = any('amazon.com' in line for line in existing_lines if not line.startswith('#'))
+        
+        print(f"   Existing: YouTube={existing_youtube}, Amazon={existing_amazon}")
+        print(f"   New:      YouTube={new_youtube}, Amazon={new_amazon}")
+        
+        # Smart merge logic
+        should_merge = False
+        if new_youtube and not new_amazon and existing_amazon:
+            print("\n🔄 Detected: New YouTube cookies + Existing Amazon cookies")
+            print("   → Will MERGE to keep both!")
+            should_merge = True
+        elif new_amazon and not new_youtube and existing_youtube:
+            print("\n🔄 Detected: New Amazon cookies + Existing YouTube cookies")
+            print("   → Will MERGE to keep both!")
+            should_merge = True
+        
+        if should_merge:
+            # Extract Amazon cookies from existing
+            amazon_cookies = [line for line in existing_lines 
+                            if 'amazon.com' in line and not line.startswith('#')]
+            
+            # Extract YouTube cookies from existing
+            youtube_cookies = [line for line in existing_lines 
+                             if ('youtube.com' in line or 'google.com' in line) and not line.startswith('#')]
+            
+            # Merge: Keep new cookies + add missing domain from old
+            if new_youtube and existing_amazon:
+                # New has YouTube, keep Amazon from old
+                print(f"   • Keeping {len(amazon_cookies)} Amazon cookies from existing file")
+                merged_lines = new_lines + ['\n'] + amazon_cookies
+            elif new_amazon and existing_youtube:
+                # New has Amazon, keep YouTube from old
+                print(f"   • Keeping {len(youtube_cookies)} YouTube cookies from existing file")
+                merged_lines = youtube_cookies + ['\n'] + new_lines
+            else:
+                merged_lines = new_lines
+            
+            merged_content = '\n'.join(merged_lines)
+            print(f"   ✅ Merged successfully!")
+            print(f"   • Total size: {len(merged_content):,} bytes")
+    
+    success, error = save_to_file(slot, merged_content)
     
     if success:
-        print(f"✅ Saved successfully!")
+        # Verify what we saved
+        saved_lines = merged_content.splitlines()
+        youtube_count = sum(1 for line in saved_lines if ('youtube.com' in line or 'google.com' in line) and not line.startswith('#'))
+        amazon_count = sum(1 for line in saved_lines if 'amazon.com' in line and not line.startswith('#'))
+        
+        print(f"\n✅ Saved successfully!")
         print(f"   File: {slot}")
-        print(f"   Size: {len(final_content):,} bytes")
+        print(f"   Size: {len(merged_content):,} bytes")
+        print(f"   📊 Content:")
+        print(f"      • YouTube/Google cookies: {youtube_count}")
+        print(f"      • Amazon cookies: {amazon_count}")
+        
+        if youtube_count >= 3 and amazon_count >= 3:
+            print(f"\n🎉 Perfect! Both YouTube and Amazon cookies present!")
+        elif youtube_count >= 3 and amazon_count < 3:
+            print(f"\n⚠️  Warning: Amazon cookies missing or insufficient!")
+            print(f"   Run this tool again and paste Amazon cookies to complete setup.")
+        elif amazon_count >= 3 and youtube_count < 3:
+            print(f"\n⚠️  Warning: YouTube cookies missing or insufficient!")
+            print(f"   Run this tool again and paste YouTube cookies to complete setup.")
     else:
         print(f"❌ Save failed: {error}")
 
