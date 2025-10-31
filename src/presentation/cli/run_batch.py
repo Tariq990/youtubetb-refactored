@@ -224,12 +224,16 @@ CRITICAL: Return EXACTLY {len(uncached_books)} items in the exact same order as 
         
     except Exception as e:
         if console:
-            console.print(f"[red]❌ Batch translation error: {e}[/red]")
-            console.print(f"[yellow]⚠️  Falling back to individual translations...[/yellow]")
+            console.print(f"[red]❌ Batch translation FAILED: {e}[/red]")
+            console.print(f"[bold red]⛔ STOPPED: Batch translation is REQUIRED. Individual translation is DISABLED.[/bold red]")
+            console.print(f"[yellow]💡 Fix: Run 'git pull origin master' to get the latest fixes.[/yellow]")
         else:
-            print(f"❌ Batch translation error: {e}")
-            print("⚠️ Falling back to individual translations...")
-        return {}
+            print(f"❌ Batch translation FAILED: {e}")
+            print("⛔ STOPPED: Batch translation is REQUIRED. Individual translation is DISABLED.")
+            print("💡 Fix: Run 'git pull origin master' to get the latest fixes.")
+        
+        # CRITICAL: Raise exception to stop pipeline completely
+        raise RuntimeError(f"Batch translation failed: {e}. Individual translation is disabled.")
 
 
 def _get_english_book_name(book_name: str, cache: dict) -> tuple:
@@ -460,17 +464,24 @@ def check_book_status(book_name: str, cache: dict) -> Dict:
             # else: status is unknown/new → continue to get full metadata from Gemini
     
     # NOT in cache OR NOT in database OR status is "new"
-    # With v2.3.1 batch translation, cache should ALWAYS have data now
-    # But keep fallback for safety
+    # CRITICAL: With v2.3.1+, batch translation is REQUIRED
+    # Individual translation is DISABLED for efficiency
     if input_title not in cache:
-        # This should rarely happen now (only if batch translation failed)
+        # Batch translation failed - STOP COMPLETELY
+        error_msg = f"❌ Book '{input_title}' not in cache! Batch translation must have failed."
         if console:
-            console.print(f"[yellow]⚠️  {input_title} not in cache, translating individually...[/yellow]")
-        english_title, gemini_author = _get_english_book_name(input_title, cache)
-    else:
-        # Use cached data (99% of cases with batch translation)
-        english_title = cache[input_title]["english"]
-        gemini_author = cache[input_title].get("author")
+            console.print(f"[bold red]{error_msg}[/bold red]")
+            console.print(f"[yellow]💡 Fix: Run 'git pull origin master' and restart pipeline.[/yellow]")
+        else:
+            print(error_msg)
+            print("💡 Fix: Run 'git pull origin master' and restart pipeline.")
+        
+        # Return error status instead of trying individual translation
+        raise RuntimeError(f"Batch translation required but failed for: {input_title}")
+    
+    # Use cached data from batch translation (ONLY valid path now)
+    english_title = cache[input_title]["english"]
+    gemini_author = cache[input_title].get("author")
     
     # Prefer input author over Gemini author
     author = input_author if input_author else gemini_author
