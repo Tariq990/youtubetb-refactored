@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 import time
 from datetime import datetime
+import json
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # Go up to project root
@@ -41,6 +42,143 @@ except ImportError:
     Table = None
     Panel = None
     box = None
+
+
+def _load_book_names_cache() -> dict:
+    """
+    Load book names translation cache from JSON file.
+    
+    Returns:
+        Dictionary with cached translations: {arabic_name: {english, author}}
+    """
+    cache_file = Path(__file__).resolve().parents[3] / "cache" / "book_names.json"
+    
+    try:
+        if cache_file.exists():
+            with cache_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("books", {})
+        else:
+            # Create cache directory if it doesn't exist
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            return {}
+    except Exception as e:
+        if console:
+            console.print(f"[yellow]⚠️  Could not load cache: {e}[/yellow]")
+        else:
+            print(f"⚠️ Could not load cache: {e}")
+        return {}
+
+
+def _save_book_names_cache(cache: dict) -> None:
+    """
+    Save book names translation cache to JSON file.
+    
+    Args:
+        cache: Dictionary with translations to save
+    """
+    cache_file = Path(__file__).resolve().parents[3] / "cache" / "book_names.json"
+    
+    try:
+        # Ensure directory exists
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save with pretty formatting
+        data = {
+            "_comment": "Cache for Arabic to English book name translations",
+            "_description": "Stores translations from Gemini to avoid repeated API calls",
+            "books": cache
+        }
+        
+        with cache_file.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        if console:
+            console.print(f"[yellow]⚠️  Could not save cache: {e}[/yellow]")
+        else:
+            print(f"⚠️ Could not save cache: {e}")
+
+
+def _get_english_book_name(book_name: str, cache: dict) -> tuple:
+    """
+    Get English book name and author, using cache when available.
+    
+    Args:
+        book_name: Book name in any language (Arabic/English)
+        cache: Translation cache dictionary
+    
+    Returns:
+        Tuple of (english_title, author_name)
+    """
+    import json as _json
+    
+    # Check if already in cache
+    if book_name in cache:
+        cached = cache[book_name]
+        if console:
+            console.print(f"[dim]💾 Cache hit: {book_name} → {cached['english']}[/dim]")
+        return cached["english"], cached.get("author")
+    
+    # Not in cache - need to call Gemini
+    if console:
+        console.print(f"[cyan]🔍 Translating: {book_name}[/cyan]")
+    else:
+        print(f"🔍 Translating: {book_name}")
+    
+    try:
+        from src.infrastructure.adapters.process import _configure_model, _get_official_book_name
+        
+        # Get repo root and config
+        repo_root = Path(__file__).resolve().parents[3]
+        config_dir = repo_root / "config"
+        
+        # Load prompts
+        prompts = {}
+        try:
+            prompts_json = config_dir / "prompts.json"
+            if prompts_json.exists():
+                prompts = _json.loads(prompts_json.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        
+        # Configure Gemini model
+        model = _configure_model(config_dir)
+        
+        if model:
+            # Get official English name from Gemini
+            english_title, author_name = _get_official_book_name(model, book_name, prompts)
+            
+            if english_title:
+                # Save to cache
+                cache[book_name] = {
+                    "english": english_title,
+                    "author": author_name
+                }
+                _save_book_names_cache(cache)
+                
+                if console:
+                    console.print(f"[green]✅ Translated: {book_name} → {english_title}[/green]")
+                else:
+                    print(f"✅ Translated: {book_name} → {english_title}")
+                
+                return english_title, author_name
+            else:
+                # Gemini failed - use original name
+                if console:
+                    console.print(f"[yellow]⚠️  Could not translate, using original: {book_name}[/yellow]")
+                return book_name, None
+        else:
+            # Gemini not configured - use original name
+            if console:
+                console.print(f"[yellow]⚠️  Gemini not configured, using original: {book_name}[/yellow]")
+            return book_name, None
+            
+    except Exception as e:
+        if console:
+            console.print(f"[red]❌ Translation error: {e}[/red]")
+        else:
+            print(f"❌ Translation error: {e}")
+        return book_name, None
 
 
 def _ensure_database_synced() -> bool:
@@ -105,30 +243,44 @@ def _ensure_database_synced() -> bool:
         return False
 
 
-def check_book_status(book_name: str) -> Dict:
+def check_book_status(book_name: str, cache: dict) -> Dict:
     """
     Check book status in database to determine processing strategy.
+    Uses cache to translate Arabic names to English before checking database.
     
     Args:
-        book_name: Book name (may include author separated by |)
+        book_name: Book name (may include author separated by | or in any language)
+        cache: Translation cache dictionary
     
     Returns:
         {
             "exists": bool,
             "status": "done" | "processing" | "new",
             "book_info": dict or None,
-            "action": "skip" | "resume" | "process"
+            "action": "skip" | "resume" | "process",
+            "title": str (English title),
+            "author": str,
+            "original_input": str (original Arabic/English input)
         }
     """
     from src.infrastructure.adapters.database import check_book_exists
     
+    # Store original input
+    original_input = book_name
+    
     # Parse book name (format: "Book Title | Author Name" or just "Book Title")
     parts = [p.strip() for p in book_name.split('|')]
-    title = parts[0]
-    author = parts[1] if len(parts) > 1 else None
+    input_title = parts[0]
+    input_author = parts[1] if len(parts) > 1 else None
     
-    # Check database
-    book_info = check_book_exists(title, author)
+    # Get English translation using cache
+    english_title, gemini_author = _get_english_book_name(input_title, cache)
+    
+    # Prefer input author over Gemini author
+    author = input_author if input_author else gemini_author
+    
+    # Check database with English name
+    book_info = check_book_exists(english_title, author)
     
     if not book_info:
         return {
@@ -136,8 +288,9 @@ def check_book_status(book_name: str) -> Dict:
             "status": "new",
             "book_info": None,
             "action": "process",
-            "title": title,
-            "author": author
+            "title": english_title,
+            "author": author,
+            "original_input": original_input
         }
     
     status = book_info.get("status", "unknown")
@@ -148,8 +301,9 @@ def check_book_status(book_name: str) -> Dict:
             "status": "done",
             "book_info": book_info,
             "action": "skip",
-            "title": title,
-            "author": author
+            "title": english_title,
+            "author": author,
+            "original_input": original_input
         }
     elif status == "processing":
         return {
@@ -157,8 +311,9 @@ def check_book_status(book_name: str) -> Dict:
             "status": "processing",
             "book_info": book_info,
             "action": "resume",
-            "title": title,
-            "author": author
+            "title": english_title,
+            "author": author,
+            "original_input": original_input
         }
     else:
         return {
@@ -166,8 +321,9 @@ def check_book_status(book_name: str) -> Dict:
             "status": status,
             "book_info": book_info,
             "action": "process",
-            "title": title,
-            "author": author
+            "title": english_title,
+            "author": author,
+            "original_input": original_input
         }
 
 
@@ -399,7 +555,29 @@ def process_books_batch(
     # Step 1: Ensure database is synced (auto-sync from YouTube if empty)
     _ensure_database_synced()
     
-    # Step 2: Analyze all books first
+    # Step 2: Load book names translation cache
+    if console:
+        console.print("\n[cyan]💾 Loading translation cache...[/cyan]")
+    else:
+        print("\n💾 Loading translation cache...")
+    
+    book_names_cache = _load_book_names_cache()
+    cache_size = len(book_names_cache)
+    
+    if cache_size > 0:
+        if console:
+            console.print(f"[green]✅ Loaded {cache_size} cached translations[/green]")
+        else:
+            print(f"✅ Loaded {cache_size} cached translations")
+    else:
+        if console:
+            console.print("[dim]Cache is empty - will translate on first use[/dim]")
+        else:
+            print("Cache is empty - will translate on first use")
+    
+    log_batch(f"📝 Cache loaded: {cache_size} translations")
+    
+    # Step 3: Analyze all books first
     if console:
         console.print("\n[cyan]📊 Analyzing books status...[/cyan]")
     else:
@@ -407,7 +585,7 @@ def process_books_batch(
     
     books_status = []
     for book_name in books:
-        status = check_book_status(book_name)
+        status = check_book_status(book_name, book_names_cache)
         books_status.append(status)
     
     # Display plan

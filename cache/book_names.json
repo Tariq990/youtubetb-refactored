@@ -1,0 +1,6 @@
+{
+  "_comment": "Cache for Arabic to English book name translations",
+  "_description": "Stores translations from Gemini to avoid repeated API calls",
+  "_format": "arabic_name: {english: string, author: string}",
+  "books": {}
+}
