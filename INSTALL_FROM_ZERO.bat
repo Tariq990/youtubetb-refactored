@@ -1,10 +1,11 @@
 @echo off
-title YouTubeTB - Full Auto Setup (Main Runner)
+title YouTubeTB - Install From Zero
 color 0A
 setlocal EnableExtensions EnableDelayedExpansion
 
 echo ==========================================================
-echo       🚀 YouTubeTB - Full Auto Setup (Main Runner)
+echo       🚀 YouTubeTB - Install From Zero
+echo       (Complete Setup for New Systems)
 echo ==========================================================
 echo.
 
@@ -73,16 +74,16 @@ if exist "%FOLDER%\.git" (
 echo ✅ Repository ready.
 echo.
 
-:: STEP 5: Run internal setup (QUICK_FIX.bat - simpler and more reliable)
-if not exist "QUICK_FIX.bat" (
-    echo ❌ QUICK_FIX.bat not found in project folder.
+:: STEP 5: Run internal setup (INSTALL_DEPENDENCIES.bat)
+if not exist "INSTALL_DEPENDENCIES.bat" (
+    echo ❌ INSTALL_DEPENDENCIES.bat not found in project folder.
     pause
     exit /b 1
 )
 
-echo 🧩 Running quick setup (dependencies only)...
+echo 🧩 Running dependency installation...
 echo.
-call QUICK_FIX.bat
+call INSTALL_DEPENDENCIES.bat
 
 echo.
 echo ==========================================================
@@ -91,7 +92,7 @@ echo ==========================================================
 echo.
 echo 🚀 Next step: Run the program
 echo    cd %FOLDER%
-echo    run.bat
+echo    RUN.bat
 echo.
 pause
 exit /b 0

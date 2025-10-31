@@ -1,9 +1,9 @@
 @echo off
-title Quick Fix - Install Dependencies
+title YouTubeTB - Install Dependencies
 color 0A
 
 echo ========================================
-echo   Quick Fix - Installing Dependencies
+echo   YouTubeTB - Install Dependencies
 echo ========================================
 echo.
 
@@ -61,4 +61,4 @@ echo ========================================
 echo.
 echo 🚀 Starting the program automatically...
 timeout /t 2 /nobreak >nul
-call run.bat
+call RUN.bat
