@@ -148,7 +148,8 @@ def header() -> None:
     t.add_row("16", "🗑️ Clean Up (Delete runs, tmp, database, pexels)")
     t.add_row("17", "🍪 Cookies & API Helper (JSON→Netscape, Test APIs)")
     t.add_row("18", "🔓 Decrypt Secrets (For deployment on new machines)")
-    t.add_row("19", "Exit")
+    t.add_row("19", "🔄 Force Pull from GitHub (Overwrite local changes)")
+    t.add_row("20", "Exit")
     console.print(t)
 
 
@@ -422,6 +423,89 @@ def run_decrypt_secrets():
         console.print("\n[yellow]Decryption canceled.[/yellow]")
     except Exception as e:
         console.print(f"[red]❌ Error running decryption: {e}[/red]")
+    
+    pause()
+
+
+def run_force_pull():
+    """Force pull from GitHub (overwrites local changes)"""
+    console.clear()
+    console.rule("[bold red]🔄 Force Pull from GitHub")
+    
+    console.print("[bold red]⚠️  WARNING: This will OVERWRITE all local changes![/bold red]")
+    console.print("[yellow]This operation will:[/yellow]")
+    console.print("   1. Fetch latest code from GitHub (origin/master)")
+    console.print("   2. Reset all local files to match GitHub")
+    console.print("   3. Delete any uncommitted changes")
+    console.print("\n[dim]Use this when you want to sync with the latest code and don't care about local edits.[/dim]\n")
+    
+    confirm = Prompt.ask(
+        "Are you SURE you want to overwrite all local changes?",
+        choices=["yes", "no"],
+        default="no"
+    )
+    
+    if confirm.lower() != "yes":
+        console.print("[yellow]Force pull canceled.[/yellow]")
+        pause()
+        return
+    
+    try:
+        console.print("\n[cyan]Step 1: Fetching from GitHub...[/cyan]")
+        result1 = subprocess.run(
+            ["git", "fetch", "origin", "master"],
+            cwd=repo_root(),
+            capture_output=True,
+            text=True
+        )
+        
+        if result1.returncode == 0:
+            console.print("[green]✓ Fetch completed[/green]")
+        else:
+            console.print(f"[red]✗ Fetch failed: {result1.stderr}[/red]")
+            pause()
+            return
+        
+        console.print("\n[cyan]Step 2: Resetting local files to match GitHub...[/cyan]")
+        result2 = subprocess.run(
+            ["git", "reset", "--hard", "origin/master"],
+            cwd=repo_root(),
+            capture_output=True,
+            text=True
+        )
+        
+        if result2.returncode == 0:
+            console.print("[green]✓ Reset completed[/green]")
+            console.print(result2.stdout.strip())
+        else:
+            console.print(f"[red]✗ Reset failed: {result2.stderr}[/red]")
+            pause()
+            return
+        
+        console.print("\n[cyan]Step 3: Cleaning untracked files...[/cyan]")
+        result3 = subprocess.run(
+            ["git", "clean", "-fd"],
+            cwd=repo_root(),
+            capture_output=True,
+            text=True
+        )
+        
+        if result3.returncode == 0:
+            console.print("[green]✓ Clean completed[/green]")
+            if result3.stdout.strip():
+                console.print(result3.stdout.strip())
+        else:
+            console.print(f"[yellow]⚠️  Clean warning: {result3.stderr}[/yellow]")
+        
+        console.print("\n" + "="*60)
+        console.print("[bold green]✅ Force pull completed successfully![/bold green]")
+        console.print("[green]Your local code now matches GitHub master branch.[/green]")
+        console.print("="*60)
+        
+    except FileNotFoundError:
+        console.print("[red]❌ Git not found. Make sure Git is installed and in PATH.[/red]")
+    except Exception as e:
+        console.print(f"[red]❌ Error during force pull: {e}[/red]")
     
     pause()
 
@@ -893,7 +977,7 @@ def main() -> int:
     while True:
         console.clear()
         header()
-        choice = Prompt.ask("Choose", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"], default="1")
+        choice = Prompt.ask("Choose", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"], default="1")
         console.rule(style="dim")
         try:
             if choice == "0":
@@ -1035,6 +1119,8 @@ def main() -> int:
             elif choice == "18":
                 run_decrypt_secrets()
             elif choice == "19":
+                run_force_pull()
+            elif choice == "20":
                 console.print("[bold yellow]Goodbye![/bold yellow]")
                 return 0
         except KeyboardInterrupt:
