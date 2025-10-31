@@ -71,6 +71,10 @@ Thumbs.db
 database.json
 src/database.json
 
+# Cache files (local only - translations are user-specific)
+cache/
+cache/*.json
+
 # Logs
 *.log
 logs/
