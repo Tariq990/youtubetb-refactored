@@ -238,9 +238,10 @@ def json_to_netscape(json_content):
         for cookie in cookies:
             domain = cookie.get('domain', '')
             
-            # Only keep YouTube/Google cookies
-            if 'youtube.com' not in domain and 'google.com' not in domain:
-                continue
+            # Accept YouTube/Google/Amazon cookies (all needed domains)
+            valid_domains = ['youtube.com', 'google.com', 'amazon.com']
+            if not any(d in domain for d in valid_domains):
+                continue  # Skip other domains
             
             # Extract fields with defaults
             flag = "TRUE" if not cookie.get('hostOnly', False) else "FALSE"
@@ -256,8 +257,8 @@ def json_to_netscape(json_content):
             kept_count += 1
         
         if kept_count == 0:
-            logging.error("No YouTube/Google cookies found in JSON")
-            return None, "No YouTube/Google cookies found in JSON"
+            logging.error("No valid cookies found in JSON (need YouTube/Google/Amazon)")
+            return None, "No valid cookies found (need YouTube, Google, or Amazon cookies)"
         
         netscape_content = "\n".join(lines)
         logging.info(f"Converted {kept_count} cookies to Netscape format")
@@ -979,18 +980,20 @@ def remove_user_agent(transcribe_path):
 
 def add_cookies():
     """
-    Add YouTube cookies (supports JSON & Netscape)
+    Add YouTube/Amazon cookies (supports JSON & Netscape)
     """
     print("\n" + "="*60)
-    print("🍪 Add YouTube Cookies")
+    print("🍪 Add YouTube/Amazon Cookies")
     print("="*60)
     
     print("\nInstructions:")
     print("1. Export cookies from browser extension")
     print("   - EditThisCookie (Chrome) - JSON format ✅")
     print("   - Cookie Quick Manager (Firefox) - JSON ✅")
-    print("   - Get cookies.txt LOCALLY - Netscape format")
-    print("\n2. Login to YouTube.com first")
+    print("   - Get cookies.txt LOCALLY - Netscape format ✅")
+    print("\n2. Login to YouTube.com AND Amazon.com first")
+    print("   - Can paste YouTube cookies first, then Amazon later")
+    print("   - Or paste both together (smart merge will handle it)")
     print("\n3. Paste cookies below:")
     
     # Read input
