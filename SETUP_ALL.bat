@@ -47,11 +47,7 @@ if %errorLevel% neq 0 (
     
     :: Download Python installer
     echo    ⏬ Downloading Python installer (~30 MB)...
-    powershell -NoProfile -Command ^
-        "$ProgressPreference='SilentlyContinue'; ^
-        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ^
-        Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe' ^
-        -OutFile '%TEMP%\yttb_setup\python_installer.exe'"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe' -OutFile '%TEMP%\yttb_setup\python_installer.exe'"
     
     if not exist "%TEMP%\yttb_setup\python_installer.exe" (
         echo    ❌ Download failed!
@@ -95,19 +91,11 @@ if %errorLevel% neq 0 (
     
     :: Download FFmpeg
     echo    ⏬ Downloading FFmpeg (~100 MB, may take 2-5 min)...
-    powershell -NoProfile -Command ^
-        "$ProgressPreference='SilentlyContinue'; ^
-        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ^
-        Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' ^
-        -OutFile '%TEMP%\yttb_setup\ffmpeg.zip'"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile '%TEMP%\yttb_setup\ffmpeg.zip'"
     
     if not exist "%TEMP%\yttb_setup\ffmpeg.zip" (
         echo    ⚠️  Download failed - Trying alternative...
-        powershell -NoProfile -Command ^
-            "$ProgressPreference='SilentlyContinue'; ^
-            [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ^
-            Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' ^
-            -OutFile '%TEMP%\yttb_setup\ffmpeg.zip'"
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile '%TEMP%\yttb_setup\ffmpeg.zip'"
     )
     
     if exist "%TEMP%\yttb_setup\ffmpeg.zip" (
