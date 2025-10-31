@@ -570,12 +570,41 @@ def main(
     methods = ['yt-dlp', 'transcript-api']
     result: Optional[str] = None
     used_title: Optional[str] = None
+    
+    # ===== AUTO-RETRY SYSTEM: Try each cookies file until success =====
+    current_cookie_index = 0
+    max_cookie_retries = len(cookies_found) if cookies_found else 0
 
     for method in methods:
         if method == 'yt-dlp':
             for attempt in range(1, attempts + 1):
                 print(f"Method yt-dlp attempt {attempt}/{attempts}")
                 vtt, info_title = run_yt_dlp_download_subs(url, vid, cookies, force_lang, prefer_title=prefer_title)
+                
+                # ===== AUTO-RETRY WITH FALLBACK COOKIES ON FAILURE =====
+                # If download failed and we have backup cookies, try them
+                if not vtt and current_cookie_index < max_cookie_retries - 1:
+                    print(f"    🔄 Primary cookies failed - trying backup cookies...")
+                    
+                    # Try each remaining backup cookies file
+                    for retry_idx in range(current_cookie_index + 1, max_cookie_retries):
+                        backup_cookies = cookies_found[retry_idx]
+                        cookies = backup_cookies
+                        current_cookie_index = retry_idx
+                        
+                        print(f"    🍪 Attempting with backup cookies {retry_idx + 1}/{max_cookie_retries}: {backup_cookies.name}...")
+                        
+                        # Retry the same request with new cookies
+                        vtt, info_title = run_yt_dlp_download_subs(url, vid, cookies, force_lang, prefer_title=prefer_title)
+                        
+                        if vtt:
+                            print(f"    ✅ Success with backup cookies {retry_idx + 1}!")
+                            break  # Success - continue with this cookies file
+                    else:
+                        # All cookies failed
+                        if max_cookie_retries > 0:
+                            print(f"    ❌ All {max_cookie_retries} cookies files exhausted")
+                
                 if vtt:
                     try:
                         text = vtt_to_text(str(vtt))

@@ -620,6 +620,11 @@ def _fetch_pexels_videos(
                 print(f"   - {kp}")
             print("[Pexels] 💡 Get free API key from: https://www.pexels.com/api/")
             print("[Pexels] 🔐 Save to secrets/.env or secrets/pexels_key.txt")
+    
+    # Handle case where API key came from environment variable
+    else:
+        # Environment variable was used - create single-item list for consistency
+        api_keys_found = [(Path("ENV_VAR"), api_key)]
 
     if not api_key:
         print("ℹ️ PEXELS_API_KEY not set. Skipping Pexels videos fetch.")
@@ -635,6 +640,12 @@ def _fetch_pexels_videos(
     random.shuffle(SEARCH_QUERIES)  # Randomize order for variety
     selected_queries = SEARCH_QUERIES[:4]  # Pick first 4 from shuffled list
 
+    # ===== AUTO-RETRY SYSTEM: Try each API key until success =====
+    # Start with primary key, fall back to others on 403/429 errors
+    current_key_index = 0
+    max_key_retries = len(api_keys_found)
+    
+    # Initial headers with primary key
     headers = {"Authorization": api_key}
 
     for search_query in selected_queries:
@@ -660,9 +671,38 @@ def _fetch_pexels_videos(
                 cache_hours=24  # Cache valid for 24 hours
             )
             
-            # Check if fetch failed after all retries
+            # ===== AUTO-RETRY WITH FALLBACK KEYS ON 403/429 =====
+            # If fetch failed and we have backup keys, try them
+            if data is None and current_key_index < max_key_retries - 1:
+                print(f"    🔄 Primary API key failed - trying backup keys...")
+                
+                # Try each remaining backup key
+                for retry_idx in range(current_key_index + 1, max_key_retries):
+                    _, backup_key = api_keys_found[retry_idx]
+                    headers = {"Authorization": backup_key}
+                    current_key_index = retry_idx
+                    
+                    print(f"    🔑 Attempting with backup API key {retry_idx + 1}/{max_key_retries}...")
+                    
+                    # Retry the same request with new key
+                    data = _fetch_with_cache(
+                        query=search_query,
+                        page=page,
+                        headers=headers,
+                        params=params,
+                        cache_hours=24
+                    )
+                    
+                    if data is not None:
+                        print(f"    ✅ Success with backup key {retry_idx + 1}!")
+                        break  # Success - continue with this key
+                else:
+                    # All keys failed
+                    print(f"    ❌ All {max_key_retries} API keys exhausted for query '{search_query}'")
+            
+            # Final check after retry attempts
             if data is None:
-                print(f"    ❌ Skipping query '{search_query}' page {page} after retry failures")
+                print(f"    ❌ Skipping query '{search_query}' page {page} - no valid API keys remaining")
                 break  # Move to next query
             
             videos = data.get("videos", [])
