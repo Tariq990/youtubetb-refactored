@@ -7,6 +7,16 @@ echo   YouTubeTB - Install Dependencies
 echo ========================================
 echo.
 
+:: Update from GitHub first
+echo Updating from GitHub...
+git pull origin master 2>nul
+if %errorLevel% equ 0 (
+    echo ✅ Repository updated
+) else (
+    echo ⚠️  Not a git repository or update failed (continuing anyway)
+)
+echo.
+
 :: Create virtual environment if missing
 if not exist "venv" (
     echo Creating virtual environment...
