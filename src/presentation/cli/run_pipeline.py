@@ -39,6 +39,43 @@ console = Console()
 MAX_RETRIES_PER_STAGE = 10
 
 
+def _ask_user_to_continue_or_stop(stage_name: str, error_msg: str, auto_continue: bool) -> bool:
+    """
+    Ask user whether to continue or stop after a stage fails.
+    
+    Args:
+        stage_name: Name of the failed stage
+        error_msg: Error message to display
+        auto_continue: If True, automatically continue without asking
+        
+    Returns:
+        True to continue (retry or skip), False to stop pipeline
+    """
+    if auto_continue:
+        # Auto mode: Don't ask, just stop
+        console.print(f"[dim]🤖 Auto-continue mode: Stopping pipeline after failure...[/dim]")
+        return False
+    
+    # Manual mode: Ask user
+    console.print(f"\n[bold yellow]🛑 {stage_name.upper()} STAGE FAILED[/bold yellow]")
+    console.print(f"[red]{error_msg}[/red]")
+    console.print(f"\n[yellow]What would you like to do?[/yellow]")
+    console.print(f"[cyan]  1. Stop pipeline (recommended)[/cyan]")
+    console.print(f"[cyan]  2. Continue to next stage (may cause issues)[/cyan]")
+    
+    try:
+        choice = input("\nYour choice (1/2): ").strip()
+        if choice == "2":
+            console.print(f"[yellow]⚠️  Continuing despite failure...[/yellow]\n")
+            return True
+        else:
+            console.print(f"\n[bold red]🛑 PIPELINE STOPPED BY USER[/bold red]\n")
+            return False
+    except (KeyboardInterrupt, EOFError):
+        console.print(f"\n[bold red]🛑 PIPELINE INTERRUPTED[/bold red]\n")
+        return False
+
+
 def _ensure_database_synced() -> bool:
     """
     Ensure database.json is synced with YouTube channel.
@@ -1172,7 +1209,14 @@ def _run_internal(
                     "duration_sec": round(t1 - t0, 3),
                 })
                 _save_summary(d["root"], summary)  # ← CRITICAL: Save even on failure
-                raise RuntimeError(error_msg)
+                
+                # Ask user: Continue or Stop?
+                if not _ask_user_to_continue_or_stop("search", error_msg, auto_continue):
+                    raise RuntimeError(error_msg)  # Stop pipeline
+                else:
+                    # User chose to continue despite failure - break retry loop
+                    console.print(f"[yellow]⚠️  Skipping failed search stage, continuing to next stage...[/yellow]")
+                    break
 
             sleep_s = min(60, 5 * attempt)
             console.print(f"[yellow]Search failed (attempt {attempt}/{MAX_RETRIES_PER_STAGE}). Retrying in {sleep_s}s...[/yellow]")
@@ -1265,7 +1309,14 @@ def _run_internal(
                 "error": "All candidates failed transcription - likely cookies/IP issue"
             })
             _save_summary(d["root"], summary)  # ← CRITICAL: Save failure
-            raise RuntimeError(error_msg)  # Allow batch to catch and continue to next book
+            
+            # Ask user: Continue or Stop?
+            if not _ask_user_to_continue_or_stop("transcribe", error_msg, auto_continue):
+                raise RuntimeError(error_msg)  # Stop pipeline
+            else:
+                # User chose to continue despite failure
+                console.print(f"[yellow]⚠️  Skipping failed transcribe stage, continuing to next stage...[/yellow]")
+                transcript_path = None  # Continue without transcript
 
     console.rule("[bold]3) Process Script")
 
@@ -1320,7 +1371,14 @@ def _run_internal(
                     "duration_sec": round(t1 - t0, 3),
                 })
                 _save_summary(d["root"], summary)  # ← CRITICAL: Save even on failure
-                raise RuntimeError(error_msg)
+                
+                # Ask user: Continue or Stop?
+                if not _ask_user_to_continue_or_stop("process", error_msg, auto_continue):
+                    raise RuntimeError(error_msg)  # Stop pipeline
+                else:
+                    # User chose to continue despite failure - break retry loop
+                    console.print(f"[yellow]⚠️  Skipping failed process stage, continuing to next stage...[/yellow]")
+                    break
 
             sleep_s = min(60, 5 * attempt)
             console.print(f"[yellow]Process failed (attempt {attempt}/{MAX_RETRIES_PER_STAGE}). Retrying in {sleep_s}s...[/yellow]")
@@ -1377,7 +1435,14 @@ def _run_internal(
                     "duration_sec": round(t1 - t0, 3),
                 })
                 _save_summary(d["root"], summary)  # ← CRITICAL: Save even on failure
-                raise RuntimeError(error_msg)
+                
+                # Ask user: Continue or Stop?
+                if not _ask_user_to_continue_or_stop("tts", error_msg, auto_continue):
+                    raise RuntimeError(error_msg)  # Stop pipeline
+                else:
+                    # User chose to continue despite failure - break retry loop
+                    console.print(f"[yellow]⚠️  Skipping failed TTS stage, continuing to next stage...[/yellow]")
+                    break
 
             sleep_s = min(60, 5 * attempt)
             console.print(f"[yellow]TTS failed (attempt {attempt}/{MAX_RETRIES_PER_STAGE}). Retrying in {sleep_s}s...[/yellow]")
@@ -1495,7 +1560,22 @@ def _run_internal(
                 _save_summary(d["root"], summary)  # ← CRITICAL: Save after stage completion
                 break
             if attempt >= MAX_RETRIES_PER_STAGE:
-                raise RuntimeError(f"Render stage failed after {MAX_RETRIES_PER_STAGE} attempts")
+                error_msg = f"❌ CRITICAL: Render stage failed after {MAX_RETRIES_PER_STAGE} attempts"
+                console.print(f"[red]{error_msg}[/red]")
+                summary["stages"].append({
+                    "name": "render",
+                    "status": "failed",
+                    "duration_sec": round(t1 - t0, 3),
+                })
+                _save_summary(d["root"], summary)
+                
+                # Ask user: Continue or Stop?
+                if not _ask_user_to_continue_or_stop("render", error_msg, auto_continue):
+                    raise RuntimeError(error_msg)  # Stop pipeline
+                else:
+                    # User chose to continue despite failure - break retry loop
+                    console.print(f"[yellow]⚠️  Skipping failed render stage, continuing to next stage...[/yellow]")
+                    break
             sleep_s = min(60, 5 * attempt)
             console.print(f"[yellow]Render failed (attempt {attempt}/{MAX_RETRIES_PER_STAGE}). Retrying in {sleep_s}s...[/yellow]")
             time.sleep(sleep_s)
@@ -1636,7 +1716,22 @@ def _run_internal(
                 _save_summary(d["root"], summary)  # ← CRITICAL: Save after stage completion
                 break
             if attempt >= MAX_RETRIES_PER_STAGE:
-                raise RuntimeError(f"Merge stage failed after {MAX_RETRIES_PER_STAGE} attempts")
+                error_msg = f"❌ CRITICAL: Merge stage failed after {MAX_RETRIES_PER_STAGE} attempts"
+                console.print(f"[red]{error_msg}[/red]")
+                summary["stages"].append({
+                    "name": "merge",
+                    "status": "failed",
+                    "duration_sec": round(t1 - t0, 3),
+                })
+                _save_summary(d["root"], summary)
+                
+                # Ask user: Continue or Stop?
+                if not _ask_user_to_continue_or_stop("merge", error_msg, auto_continue):
+                    raise RuntimeError(error_msg)  # Stop pipeline
+                else:
+                    # User chose to continue despite failure - break retry loop
+                    console.print(f"[yellow]⚠️  Skipping failed merge stage, continuing to next stage...[/yellow]")
+                    break
             sleep_s = min(60, 5 * attempt)
             console.print(f"[yellow]Merge failed (attempt {attempt}/{MAX_RETRIES_PER_STAGE}). Retrying in {sleep_s}s...[/yellow]")
             time.sleep(sleep_s)
@@ -1782,7 +1877,22 @@ def _run_internal(
                 _save_summary(d["root"], summary)  # ← CRITICAL: Save after stage completion
                 break
             if attempt >= MAX_RETRIES_PER_STAGE:
-                raise RuntimeError(f"Upload stage failed after {MAX_RETRIES_PER_STAGE} attempts")
+                error_msg = f"❌ CRITICAL: Upload stage failed after {MAX_RETRIES_PER_STAGE} attempts"
+                console.print(f"[red]{error_msg}[/red]")
+                summary["stages"].append({
+                    "name": "upload",
+                    "status": "failed",
+                    "duration_sec": round(t1 - t0, 3),
+                })
+                _save_summary(d["root"], summary)
+                
+                # Ask user: Continue or Stop?
+                if not _ask_user_to_continue_or_stop("upload", error_msg, auto_continue):
+                    raise RuntimeError(error_msg)  # Stop pipeline
+                else:
+                    # User chose to continue despite failure - break retry loop
+                    console.print(f"[yellow]⚠️  Skipping failed upload stage, continuing to next stage...[/yellow]")
+                    break
             sleep_s = min(60, 5 * attempt)
             console.print(f"[yellow]Upload failed (attempt {attempt}/{MAX_RETRIES_PER_STAGE}). Retrying in {sleep_s}s...[/yellow]")
             time.sleep(sleep_s)
