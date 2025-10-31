@@ -37,7 +37,7 @@ if exist requirements.txt (
 
 :: Install Playwright
 echo Installing Playwright Chromium...
-playwright install chromium
+python -m playwright install chromium
 
 echo.
 echo ========================================
