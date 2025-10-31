@@ -248,6 +248,11 @@ def check_book_status(book_name: str, cache: dict) -> Dict:
     Check book status in database to determine processing strategy.
     Uses cache to translate Arabic names to English before checking database.
     
+    CRITICAL OPTIMIZATION (v2.3.1):
+    - If book is in cache → Check database IMMEDIATELY (no Gemini call)
+    - Only call Gemini if NOT in cache or NOT in database
+    - Saves API calls for duplicate/completed books
+    
     Args:
         book_name: Book name (may include author separated by | or in any language)
         cache: Translation cache dictionary
@@ -273,13 +278,54 @@ def check_book_status(book_name: str, cache: dict) -> Dict:
     input_title = parts[0]
     input_author = parts[1] if len(parts) > 1 else None
     
-    # Get English translation using cache
+    # CRITICAL OPTIMIZATION: Check cache first WITHOUT calling Gemini
+    if input_title in cache:
+        cached_data = cache[input_title]
+        english_title = cached_data["english"]
+        cached_author = cached_data.get("author")
+        author = input_author if input_author else cached_author
+        
+        if console:
+            console.print(f"[dim]💾 Cache hit: {input_title} → {english_title}[/dim]")
+        
+        # Check database with cached translation (NO Gemini call!)
+        book_info = check_book_exists(english_title, author)
+        
+        if book_info:
+            status = book_info.get("status", "unknown")
+            
+            if status in ["done", "uploaded"]:
+                # ✅ Book complete - SKIP (saved Gemini API call!)
+                return {
+                    "exists": True,
+                    "status": "done",
+                    "book_info": book_info,
+                    "action": "skip",
+                    "title": english_title,
+                    "author": author,
+                    "original_input": original_input
+                }
+            elif status == "processing":
+                # ♻️ Incomplete - RESUME (saved Gemini API call!)
+                return {
+                    "exists": True,
+                    "status": "processing",
+                    "book_info": book_info,
+                    "action": "resume",
+                    "title": english_title,
+                    "author": author,
+                    "original_input": original_input
+                }
+            # else: status is unknown/new → continue to get full metadata from Gemini
+    
+    # NOT in cache OR NOT in database OR status is "new"
+    # NOW call Gemini to get full metadata (translation + author)
     english_title, gemini_author = _get_english_book_name(input_title, cache)
     
     # Prefer input author over Gemini author
     author = input_author if input_author else gemini_author
     
-    # Check database with English name
+    # Check database again with Gemini translation
     book_info = check_book_exists(english_title, author)
     
     if not book_info:
@@ -295,7 +341,7 @@ def check_book_status(book_name: str, cache: dict) -> Dict:
     
     status = book_info.get("status", "unknown")
     
-    if status == "done":
+    if status in ["done", "uploaded"]:
         return {
             "exists": True,
             "status": "done",

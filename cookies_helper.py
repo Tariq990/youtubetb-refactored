@@ -735,15 +735,243 @@ def update_env_file(var_name, value):
 
 def option_1_user_agent():
     """
-    User-Agent manager (simple implementation)
+    User-Agent manager - Add/view/edit User-Agents for transcribe.py
     """
     print("\n" + "="*60)
     print("👤 User-Agent Manager")
     print("="*60)
-    print("\n⚠️  Note: This feature is not yet integrated with pipeline.")
-    print("Press Enter to return to main menu...")
-    input()
-    logging.info("User-Agent manager accessed (not implemented)")
+    
+    # Find transcribe.py
+    transcribe_path = REPO_ROOT / "src" / "infrastructure" / "adapters" / "transcribe.py"
+    
+    if not transcribe_path.exists():
+        print("❌ transcribe.py not found!")
+        print(f"   Expected: {transcribe_path}")
+        input("\nPress Enter to continue...")
+        return
+    
+    print("\nOptions:")
+    print("  [1] 📋 View current User-Agents")
+    print("  [2] ➕ Add new User-Agent")
+    print("  [3] 🗑️  Remove User-Agent")
+    print("  [0] Back")
+    
+    choice = input("\nChoice: ").strip()
+    
+    if choice == '1':
+        view_user_agents(transcribe_path)
+    elif choice == '2':
+        add_user_agent(transcribe_path)
+    elif choice == '3':
+        remove_user_agent(transcribe_path)
+    elif choice == '0':
+        return
+    else:
+        print("❌ Invalid choice")
+
+def view_user_agents(transcribe_path):
+    """Show current User-Agents from transcribe.py"""
+    print("\n" + "="*60)
+    print("� Current User-Agents")
+    print("="*60)
+    
+    content = transcribe_path.read_text(encoding='utf-8')
+    
+    # Extract USER_AGENTS list
+    match = re.search(r'USER_AGENTS = \[(.*?)\]', content, re.DOTALL)
+    if not match:
+        print("❌ USER_AGENTS list not found!")
+        input("\nPress Enter to continue...")
+        return
+    
+    agents_text = match.group(1)
+    
+    # Parse each User-Agent
+    agents = re.findall(r'"([^"]+)"', agents_text)
+    
+    if not agents:
+        print("❌ No User-Agents found!")
+    else:
+        print(f"\n✅ Found {len(agents)} User-Agents:\n")
+        for idx, agent in enumerate(agents, 1):
+            # Show abbreviated version
+            if len(agent) > 80:
+                display = agent[:77] + "..."
+            else:
+                display = agent
+            
+            # Detect browser
+            if "Chrome" in agent and "Edg" not in agent:
+                browser = "🌐 Chrome"
+            elif "Firefox" in agent:
+                browser = "🦊 Firefox"
+            elif "Edg" in agent:
+                browser = "🔷 Edge"
+            elif "Safari" in agent and "Chrome" not in agent:
+                browser = "🧭 Safari"
+            else:
+                browser = "❓ Unknown"
+            
+            print(f"  [{idx}] {browser}")
+            print(f"      {display}")
+    
+    print(f"\n💡 Tip: Browser rotation helps avoid detection")
+    input("\nPress Enter to continue...")
+
+def add_user_agent(transcribe_path):
+    """Add new User-Agent to transcribe.py"""
+    print("\n" + "="*60)
+    print("➕ Add User-Agent")
+    print("="*60)
+    
+    print("\nInstructions:")
+    print("1. Visit: https://www.whatismybrowser.com/guides/the-latest-user-agent/")
+    print("2. Copy a recent User-Agent string")
+    print("3. Paste below:")
+    
+    new_agent = input("\nUser-Agent: ").strip()
+    
+    if not new_agent:
+        print("❌ Empty input")
+        input("\nPress Enter to continue...")
+        return
+    
+    # Validate format
+    if len(new_agent) < 50:
+        print("⚠️  Warning: User-Agent seems too short")
+        confirm = input("Continue anyway? [y/N]: ").strip().lower()
+        if confirm != 'y':
+            return
+    
+    if "Mozilla" not in new_agent:
+        print("⚠️  Warning: Doesn't start with 'Mozilla'")
+        confirm = input("Continue anyway? [y/N]: ").strip().lower()
+        if confirm != 'y':
+            return
+    
+    # Read current content
+    content = transcribe_path.read_text(encoding='utf-8')
+    
+    # Find USER_AGENTS list
+    match = re.search(r'(USER_AGENTS = \[)(.*?)(\])', content, re.DOTALL)
+    if not match:
+        print("❌ USER_AGENTS list not found!")
+        input("\nPress Enter to continue...")
+        return
+    
+    prefix = match.group(1)
+    agents_text = match.group(2)
+    suffix = match.group(3)
+    
+    # Extract existing User-Agents
+    existing_agents = re.findall(r'"([^"]+)"', agents_text)
+    
+    # Check for duplicates
+    if new_agent in existing_agents:
+        print("\n❌ This User-Agent already exists!")
+        print(f"   Found at position {existing_agents.index(new_agent) + 1}")
+        input("\nPress Enter to continue...")
+        return
+    
+    # Add new agent with proper indentation
+    new_line = f'    "{new_agent}",\n'
+    
+    # Insert before the closing bracket
+    new_agents_text = agents_text.rstrip() + "\n" + new_line
+    
+    # Reconstruct
+    new_content = content.replace(
+        match.group(0),
+        prefix + new_agents_text + suffix
+    )
+    
+    # Save with backup
+    success, error = save_to_file(transcribe_path, new_content)
+    
+    if success:
+        print("\n✅ User-Agent added successfully!")
+        print(f"   File: {transcribe_path.name}")
+        
+        # Count total agents
+        new_count = len(re.findall(r'"([^"]+)"', new_agents_text))
+        print(f"   Total: {new_count} User-Agents")
+    else:
+        print(f"\n❌ Failed: {error}")
+    
+    input("\nPress Enter to continue...")
+
+def remove_user_agent(transcribe_path):
+    """Remove User-Agent from transcribe.py"""
+    print("\n" + "="*60)
+    print("🗑️  Remove User-Agent")
+    print("="*60)
+    
+    # Read current
+    content = transcribe_path.read_text(encoding='utf-8')
+    
+    # Extract USER_AGENTS
+    match = re.search(r'USER_AGENTS = \[(.*?)\]', content, re.DOTALL)
+    if not match:
+        print("❌ USER_AGENTS list not found!")
+        input("\nPress Enter to continue...")
+        return
+    
+    agents_text = match.group(1)
+    agents = re.findall(r'"([^"]+)"', agents_text)
+    
+    if len(agents) <= 3:
+        print("⚠️  Cannot remove - need at least 3 User-Agents!")
+        input("\nPress Enter to continue...")
+        return
+    
+    # Show list
+    print(f"\nCurrent User-Agents ({len(agents)} total):\n")
+    for idx, agent in enumerate(agents, 1):
+        preview = agent[:60] + "..." if len(agent) > 60 else agent
+        print(f"  [{idx}] {preview}")
+    
+    print("  [0] Cancel")
+    
+    choice = input("\nRemove which one? ").strip()
+    
+    try:
+        idx = int(choice)
+        if idx == 0:
+            return
+        if idx < 1 or idx > len(agents):
+            print("❌ Invalid choice")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Remove selected agent
+        removed = agents.pop(idx - 1)
+        
+        # Rebuild USER_AGENTS list
+        new_agents_text = ""
+        for agent in agents:
+            new_agents_text += f'    "{agent}",\n'
+        
+        # Replace in content
+        new_content = re.sub(
+            r'USER_AGENTS = \[.*?\]',
+            f'USER_AGENTS = [\n{new_agents_text}]',
+            content,
+            flags=re.DOTALL
+        )
+        
+        # Save
+        success, error = save_to_file(transcribe_path, new_content)
+        
+        if success:
+            print(f"\n✅ Removed: {removed[:60]}...")
+            print(f"   Remaining: {len(agents)} User-Agents")
+        else:
+            print(f"\n❌ Failed: {error}")
+        
+    except ValueError:
+        print("❌ Invalid number")
+    
+    input("\nPress Enter to continue...")
 
 # ============================================================================
 # OPTION 2: ADD CREDENTIALS

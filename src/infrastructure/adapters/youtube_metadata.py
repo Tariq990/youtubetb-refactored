@@ -790,135 +790,103 @@ def _generate_ai_tags(
     book_title: str,
     author_name: Optional[str],
     prompts: dict,
-    target_count: int = 60,
+    target_count: int = 32,
 ) -> list[str]:
     """
     Generate AI-powered topic tags using Gemini with optimized SEO-focused prompt.
+    Uses tags_template from prompts.json (Version 8 - Strategic Complete Phrases).
     Returns tags that are content-aware, SEO-optimized, and YouTube-compliant.
     """
-    # Optimized professional SEO prompt (v2.2.10 - Enhanced with balanced structure)
-    prompt = f"""You are a professional YouTube SEO strategist specializing in optimizing tags for **book summary and self-development videos**.
+    # Use tags_template from prompts.json (if available)
+    template = prompts.get("tags_template")
+    
+    if template:
+        # Convert list to string if needed
+        if isinstance(template, list):
+            template = "\n".join(template)
+        
+        # Format with book details
+        prompt = _fmt(template, book_name=book_title, author_name=author_name or "Unknown")
+    else:
+        # Fallback to old prompt if template not found
+        prompt = f"""You are a YouTube SEO expert with STRICT character counting skills.
 
-**TASK:**
-Generate a **high-performing list of YouTube tags** optimized for search discoverability, engagement, and watch relevance.
+TASK: Generate 26-32 optimized tags for the book {book_title} by {author_name or "Unknown"}.
 
-**INPUT:**
-Book Title: {book_title}
-Author Name: {author_name or "Unknown"}
-Brand: InkEcho
+CRITICAL CHARACTER LIMIT:
+• MAXIMUM: 475 characters total (including commas and spaces)
+• STOP when total reaches 470 characters
 
----
+MANDATORY TAGS (First 10):
+1. {book_title}
+2. {author_name}
+3. {book_title} summary
+4. {book_title} review
+5. {author_name} {book_title}
+6. book summary
+7. full book breakdown
+8. chapter by chapter
+9. in depth analysis
+10. {book_title} explained
 
-### 🎯 OBJECTIVES:
-- Maximize **search visibility**, **CTR (click-through rate)**, and **semantic relevance**.
-- Include a balanced mix of **broad**, **mid-tail**, and **long-tail** keywords.
-- Focus on **how real users search** for book summaries and habit/mindset content.
-- Slightly repeat **key terms** like the book title and author in natural variations.
+CRITICAL RULES:
+✅ ALL LOWERCASE
+✅ SPELL OUT NUMBERS (four, two, one)
+✅ COMPLETE PHRASES (2-6 words)
+✅ NO AUDIOBOOK
+✅ NO GENERIC SINGLE-WORDS (booktok, bestseller, productivity)
 
----
-
-### ⚙️ STRICT RULES:
-1. Generate **EXACTLY 30 tags** (count carefully - this is mandatory).  
-2. Each tag ≤ **26 characters**.  
-3. Total combined characters: **460–500**.  
-4. **No duplicates** or close duplicates.  
-5. Tags must include **spaces**, not underscores or dashes.  
-6. Use lowercase except for **Book Title** and **Author Name**.  
-7. No hashtags, punctuation, or emojis.  
-8. Tags must be **realistic search phrases**, not technical terms.  
-9. At least **2–3 tags** should contain both book and author names.  
-
----
-
-### 🧩 TAG STRUCTURE & BALANCE:
-
-#### A) Core Tags (5)
-- "{book_title}"
-- "{author_name}"
-- "{book_title} {author_name}"
-- "book summary"
-- "InkEcho"
-
-#### B) Format Tags (3–4)
-- "animated summary"
-- "audiobook"
-- "book explained"
-- "motivational summary"
-
-#### C) High-Intent SEO Keywords (6–8)
-- "self improvement"
-- "personal development"
-- "motivational"
-- "educational"
-- "productivity"
-- "self discipline"
-- "success habits"
-- "mindset tips"
-
-#### D) Long-Tail Phrases (4–6)
-- "how to apply {{book_title}}"
-- "{{author_name}} techniques"
-- "best self help books"
-- "power of small habits"
-- "{{book_title}} audiobook"
-- "how habits shape you"
-
-#### E) Topic-Specific Tags (8–10)
-- "habit formation"
-- "identity habits"
-- "1 percent better"
-- "daily habits"
-- "behavior change"
-- "tiny improvements"
-- "environment design"
-- "habit stacking"
-- "atomic mindset"
-- "growth mindset"
-
----
-
-### 🪄 ORDERING PRIORITY
-1. Book title  
-2. Author name  
-3. Combined tag (book + author)  
-4. "book summary"  
-5. "InkEcho"
-6. Video format tags  
-7. SEO keywords  
-8. Long-tail phrases  
-9. Topic-specific tags
-
----
-
-### ⚠️ OUTPUT RULES:
-- Return **ONLY** a JSON array of EXACTLY 30 strings.  
-- No headers, comments, or explanations.  
-- All tags must follow the above character and balance rules.
-- **Count your tags before returning - must be exactly 30.**
-
----
-
-**BEGIN NOW:**
-Generate **exactly 30 tags** for the book:
-📘 {book_title}  
-✍️ {author_name or "Unknown"}"""
+OUTPUT FORMAT:
+Return ONLY comma-separated tags in one line.
+ALL LOWERCASE, complete phrases, NO explanations."""
 
     try:
         # Call Gemini
         resp = model.generate_content(prompt)
         raw = resp.text.strip() if hasattr(resp, 'text') else ""
 
-        # Parse JSON response
+        # Parse response (supports both plain text CSV and JSON)
         if raw:
             # Remove markdown code blocks if present
             raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
             raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
             raw = raw.strip()
             
-            # Parse JSON
-            tags = json.loads(raw)
+            # Try parsing as JSON first (for backward compatibility)
+            try:
+                tags = json.loads(raw)
+                if isinstance(tags, list):
+                    # Clean and validate each tag
+                    cleaned_tags = []
+                    for t in tags:
+                        if not t or len(t) <= 2 or len(t) > 26:
+                            continue
+                        
+                        sanitized = _sanitize_tag_text(t)
+                        if sanitized and len(sanitized) <= 26:
+                            cleaned_tags.append(sanitized)
+                    
+                    # Ensure we don't exceed API limit (499 chars)
+                    final_tags = []
+                    api_chars = 0
+                    for tag in cleaned_tags:
+                        tag_api_cost = len(tag) + (2 if " " in tag else 0)
+                        if api_chars + tag_api_cost <= 495:  # Leave 4 chars buffer
+                            final_tags.append(tag)
+                            api_chars += tag_api_cost
+                        else:
+                            break  # Stop adding tags when we hit API limit
+                    
+                    return final_tags[:target_count]
+            except json.JSONDecodeError:
+                # Not JSON, try parsing as plain text comma-separated
+                pass
             
-            if isinstance(tags, list):
+            # Parse as plain text comma-separated tags (new format from tags_template)
+            if raw:
+                # Split by comma
+                tags = [t.strip() for t in raw.split(',')]
+                
                 # Clean and validate each tag
                 cleaned_tags = []
                 for t in tags:
@@ -930,7 +898,6 @@ Generate **exactly 30 tags** for the book:
                         cleaned_tags.append(sanitized)
                 
                 # Ensure we don't exceed API limit (499 chars)
-                # API chars = raw_chars + (2 × spaced_tags)
                 final_tags = []
                 api_chars = 0
                 for tag in cleaned_tags:
@@ -942,9 +909,7 @@ Generate **exactly 30 tags** for the book:
                         break  # Stop adding tags when we hit API limit
                 
                 return final_tags[:target_count]
-    except json.JSONDecodeError as e:
-        print(f"[AI Tags] JSON parse error: {e}")
-        # Don't print raw if it might not be defined
+                
     except Exception as e:
         print(f"[AI Tags] Error: {e}")
 

@@ -17,14 +17,22 @@ TMP_SUBS_DIR = REPO_ROOT / "tmp" / "subs"
 
 # User-Agent pool for rotation (mimics real browsers)
 USER_AGENTS = [
+    # Your actual Chrome browser (PRIORITY - most recent)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+    # Chrome on Windows (recent versions)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    # Chrome on macOS
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    # Firefox on Windows
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    # Firefox on macOS
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+    # Edge on Windows
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+    # Safari on macOS
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0",
 ]
 
 
@@ -95,7 +103,6 @@ def run_yt_dlp_download_subs(
     cookies: Optional[Path],
     forced_lang: Optional[str],
     prefer_title: bool = False,
-    user_agent: Optional[str] = None,  # NEW: Accept User-Agent parameter
 ) -> Tuple[Optional[Path], Optional[str]]:
     try:
         from yt_dlp import YoutubeDL  # type: ignore
@@ -110,9 +117,8 @@ def run_yt_dlp_download_subs(
     _info_title = ''
     _info_language = ''
     
-    # Get random User-Agent if not provided (for fallback rotation)
-    if user_agent is None:
-        user_agent = get_random_user_agent()
+    # Get random User-Agent for this request
+    user_agent = get_random_user_agent()
     print(f"[INFO] Using User-Agent: {user_agent[:50]}...")  # Show first 50 chars
     
     try:
@@ -586,17 +592,10 @@ def main(
                         cookies = backup_cookies
                         current_cookie_index = retry_idx
                         
-                        # Generate NEW User-Agent for this retry (rotation)
-                        new_user_agent = get_random_user_agent()
-                        print(f"    🔄 Rotating User-Agent: {new_user_agent[:50]}...")
                         print(f"    🍪 Attempting with backup cookies {retry_idx + 1}/{max_cookie_retries}: {backup_cookies.name}...")
                         
-                        # Retry the same request with new cookies AND new User-Agent
-                        vtt, info_title = run_yt_dlp_download_subs(
-                            url, vid, cookies, force_lang, 
-                            prefer_title=prefer_title,
-                            user_agent=new_user_agent  # Pass new User-Agent
-                        )
+                        # Retry the same request with new cookies
+                        vtt, info_title = run_yt_dlp_download_subs(url, vid, cookies, force_lang, prefer_title=prefer_title)
                         
                         if vtt:
                             print(f"    ✅ Success with backup cookies {retry_idx + 1}!")
