@@ -192,6 +192,28 @@ def run_api_check():
     
     console.print("\n" + "="*60 + "\n")
     
+    # Step 1.5: Check optional packages (pydub, whisper)
+    console.print("[bold cyan]Step 1.5: Optional Packages Status[/bold cyan]")
+    console.print("="*60 + "\n")
+    
+    # Check pydub
+    try:
+        import pydub
+        console.print("[green]✅ pydub:[/green] Installed (audio duration verification enabled)")
+    except ImportError:
+        console.print("[yellow]⚠️  pydub:[/yellow] Not installed (audio trim check disabled)")
+        console.print("   [dim]Install: pip install audioop-lts pydub[/dim]")
+    
+    # Check openai-whisper
+    try:
+        import whisper
+        console.print("[green]✅ openai-whisper:[/green] Installed (95% timestamp accuracy)")
+    except ImportError:
+        console.print("[yellow]ℹ️  openai-whisper:[/yellow] Not installed (using 70% accuracy fallback)")
+        console.print("   [dim]Install: pip install openai-whisper (2-5 GB download)[/dim]")
+    
+    console.print("\n" + "="*60 + "\n")
+    
     # Step 2: Run API validation
     console.print("[bold cyan]Step 2: API Keys Validation[/bold cyan]")
     console.print("="*60 + "\n")
