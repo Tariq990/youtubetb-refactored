@@ -46,22 +46,26 @@ if exist requirements.txt (
     echo.
     echo Step 2: Verifying and installing missing packages individually...
     
-    :: Check critical packages one by one and install if missing
-    for %%p in (playwright pydub google-generativeai yt-dlp Pillow requests typer rich ffmpeg-python) do (
-        python -c "import %%p" >nul 2>&1
-        if errorLevel 1 (
-            echo    ❌ Missing: %%p - Installing now...
-            pip install %%p
-            
-            :: Verify installation
-            python -c "import %%p" >nul 2>&1
+    :: Check critical packages one by one (package_name:import_name)
+    set "packages=playwright:playwright pydub:pydub google-generativeai:google.generativeai yt-dlp:yt_dlp Pillow:PIL requests:requests typer:typer rich:rich ffmpeg-python:ffmpeg"
+    
+    for %%p in (%packages%) do (
+        for /f "tokens=1,2 delims=:" %%a in ("%%p") do (
+            python -c "import %%b" >nul 2>&1
             if errorLevel 1 (
-                echo       ⚠️  Failed to install %%p - may need manual installation
+                echo    ❌ Missing: %%a - Installing now...
+                pip install %%a
+                
+                :: Verify installation
+                python -c "import %%b" >nul 2>&1
+                if errorLevel 1 (
+                    echo       ⚠️  Failed to install %%a - may need manual installation
+                ) else (
+                    echo       ✅ %%a installed successfully
+                )
             ) else (
-                echo       ✅ %%p installed successfully
+                echo    ✅ %%a already installed
             )
-        ) else (
-            echo    ✅ %%p already installed
         )
     )
 ) else (
