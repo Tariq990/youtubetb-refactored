@@ -81,13 +81,13 @@ def _safe_text(resp) -> str:
 
 def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3) -> str:
     """
-    Generate content with retry logic for timeout errors.
+    Generate content with retry logic for timeout and quota errors.
     
     Args:
         model: Gemini model instance
         prompt: Prompt text
         mime_type: Response MIME type
-        max_retries: Maximum retry attempts for 504 errors
+        max_retries: Maximum retry attempts for 504/429 errors
         
     Returns:
         Generated text or empty string on failure
@@ -113,6 +113,10 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
             # Log API call start with timestamp
             print(f"🔄 [Gemini API] Sending request (attempt {attempt + 1}/{max_retries})...")
             
+            # Add small delay between requests to avoid rate limiting (500ms)
+            if attempt > 0:
+                time.sleep(0.5)
+            
             resp = model.generate_content(
                 prompt, 
                 generation_config={"response_mime_type": mime_type},
@@ -129,17 +133,31 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
             duration = time.time() - start_time
             print(f"❌ [Gemini API] Request failed after {duration:.1f}s: {error_msg[:100]}")
             
+            # Check for quota errors (429) - these need longer waits
+            if "429" in error_msg or "quota" in error_msg.lower():
+                if attempt < max_retries - 1:
+                    # Longer wait for quota errors: 5s, 10s, 15s
+                    wait_time = (attempt + 1) * 5
+                    print(f"⏳ Quota exceeded - waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"❌ Quota exceeded on all attempts - API key exhausted")
+                    return ""
+            
             # Retry on timeout/deadline errors
-            if "504" in error_msg or "Deadline" in error_msg or "timeout" in error_msg.lower() or "503" in error_msg:
+            elif "504" in error_msg or "Deadline" in error_msg or "timeout" in error_msg.lower() or "503" in error_msg:
                 if attempt < max_retries - 1:
                     # Progressive backoff: 10s, 20s, 30s (longer for server issues)
                     wait_time = (attempt + 1) * 10
                     print(f"⏳ Waiting {wait_time}s before retry...")
                     time.sleep(wait_time)
                     continue
-            # For non-timeout errors, don't retry
+            
+            # For other non-retryable errors, don't retry
             print(f"❌ API call failed with non-retryable error after {attempt + 1} attempts")
             return ""
+    
     print(f"❌ All {max_retries} retry attempts exhausted")
     return ""
 
@@ -240,6 +258,14 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
             # Check if it's a quota error (429)
             if "429" in error_msg or "quota" in error_msg.lower():
                 print(f"⚠️  API key {key_idx} quota exceeded: {error_msg[:100]}")
+                
+                # SMART WAIT: If not last key, wait 2 seconds before trying next
+                # This helps with rate limiting issues
+                if key_idx < len(api_keys):
+                    import time
+                    print(f"   ⏳ Waiting 2s before trying next key...")
+                    time.sleep(2)
+                
                 # Try next key
                 continue
             else:
