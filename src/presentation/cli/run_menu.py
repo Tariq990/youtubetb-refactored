@@ -210,6 +210,7 @@ def run_api_check():
         console.print("[green]✅ openai-whisper:[/green] Installed (95% timestamp accuracy)")
     except ImportError:
         console.print("[yellow]ℹ️  openai-whisper:[/yellow] Not installed (using 70% accuracy fallback)")
+        console.print("   [dim]Note: Requires Python 3.10-3.13 (not compatible with Python 3.14+)[/dim]")
         console.print("   [dim]Install: pip install openai-whisper (2-5 GB download)[/dim]")
     
     console.print("\n" + "="*60 + "\n")

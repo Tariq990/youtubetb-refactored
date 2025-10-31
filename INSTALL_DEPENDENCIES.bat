@@ -95,7 +95,8 @@ echo Step 3: Checking optional packages...
 python -c "import whisper" >nul 2>&1
 if errorLevel 1 (
     echo    ℹ️  openai-whisper: Not installed (optional - improves timestamp accuracy)
-    echo       To install: pip install openai-whisper
+    echo       Note: Requires Python 3.10-3.13 (not compatible with Python 3.14+)
+    echo       To install: pip install openai-whisper (2-5 GB download)
 ) else (
     echo    ✅ openai-whisper: Installed (95%% timestamp accuracy)
 )
