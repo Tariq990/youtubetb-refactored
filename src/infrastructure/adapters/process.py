@@ -79,23 +79,25 @@ def _safe_text(resp) -> str:
         return ""
 
 
-def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3) -> str:
+def _gen(model, prompt: str, mime_type: str = "text/plain", api_keys: Optional[list] = None) -> str:
     """
-    Generate content with retry logic for timeout and quota errors.
+    Generate content with multi-key fallback on quota errors (429).
     
     Args:
-        model: Gemini model instance
-        prompt: Prompt text
+        model: Initial Gemini model instance
+        prompt: The prompt to send
         mime_type: Response MIME type
-        max_retries: Maximum retry attempts for 504/429 errors
-        
+        api_keys: List of API keys for fallback (optional)
+    
     Returns:
         Generated text or empty string on failure
     """
-    for attempt in range(max_retries):
-        start_time = time.time()  # Initialize at loop start
+    import importlib
+    
+    # If no api_keys provided, try single attempt
+    if not api_keys:
         try:
-            # Set longer timeout for large prompts (10 minutes for safety)
+            start_time = time.time()
             prompt_size = len(prompt)
             if prompt_size > 15000:
                 timeout_seconds = 600  # 10 minutes for large prompts (15K+)
@@ -105,17 +107,8 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
                 timeout_seconds = 300  # 5 minutes for small prompts
             
             request_options = {"timeout": timeout_seconds}
-            
-            # Log timeout for transparency
-            if attempt == 0:  # Only log on first attempt
-                print(f"⏱️  Timeout set to {timeout_seconds}s ({timeout_seconds/60:.1f} min) for {prompt_size:,} chars")
-            
-            # Log API call start with timestamp
-            print(f"🔄 [Gemini API] Sending request (attempt {attempt + 1}/{max_retries})...")
-            
-            # Add small delay between requests to avoid rate limiting (500ms)
-            if attempt > 0:
-                time.sleep(0.5)
+            print(f"⏱️  Timeout set to {timeout_seconds}s ({timeout_seconds/60:.1f} min) for {prompt_size:,} chars")
+            print(f"🔄 [Gemini API] Sending request...")
             
             resp = model.generate_content(
                 prompt, 
@@ -123,46 +116,95 @@ def _gen(model, prompt: str, mime_type: str = "text/plain", max_retries: int = 3
                 request_options=request_options
             )
             
-            # Log successful response with duration
             duration = time.time() - start_time
             print(f"✅ [Gemini API] Response received in {duration:.1f}s")
-            
             return _safe_text(resp)
+        except Exception as e:
+            print(f"API call failed: {e}")
+            return ""
+    
+    # Multi-key retry logic
+    genai = importlib.import_module("google.generativeai")
+    Model = getattr(genai, "GenerativeModel")
+    
+    for key_idx, api_key in enumerate(api_keys):
+        try:
+            start_time = time.time()
+            
+            # Configure with this key
+            getattr(genai, "configure")(api_key=api_key)
+            
+            # Set timeout based on prompt size
+            prompt_size = len(prompt)
+            if prompt_size > 15000:
+                timeout_seconds = 600  # 10 minutes
+            elif prompt_size > 8000:
+                timeout_seconds = 480  # 8 minutes
+            else:
+                timeout_seconds = 300  # 5 minutes
+            
+            request_options = {"timeout": timeout_seconds}
+            
+            if key_idx == 0:  # Only log on first attempt
+                print(f"⏱️  Timeout set to {timeout_seconds}s ({timeout_seconds/60:.1f} min) for {prompt_size:,} chars")
+            
+            if len(api_keys) > 1:
+                print(f"🔄 [Gemini API] Sending request with key {key_idx + 1}/{len(api_keys)}...")
+            else:
+                print(f"🔄 [Gemini API] Sending request...")
+            
+            # Try to generate content
+            resp = model.generate_content(
+                prompt, 
+                generation_config={"response_mime_type": mime_type},
+                request_options=request_options
+            )
+            
+            duration = time.time() - start_time
+            print(f"✅ [Gemini API] Response received in {duration:.1f}s")
+            return _safe_text(resp)
+            
         except Exception as e:
             error_msg = str(e)
             duration = time.time() - start_time
-            print(f"❌ [Gemini API] Request failed after {duration:.1f}s: {error_msg[:100]}")
             
-            # Check for quota errors (429) - these need longer waits
+            # Check if it's a quota error (429)
             if "429" in error_msg or "quota" in error_msg.lower():
-                if attempt < max_retries - 1:
-                    # Longer wait for quota errors: 5s, 10s, 15s
-                    wait_time = (attempt + 1) * 5
-                    print(f"⏳ Quota exceeded - waiting {wait_time}s before retry...")
-                    time.sleep(wait_time)
+                print(f"❌ [Gemini API] Key {key_idx + 1} quota exceeded after {duration:.1f}s")
+                
+                # Try to parse wait time from error message
+                wait_time = 60  # Default 1 minute
+                match = re.search(r'retry after (\d+)', error_msg.lower())
+                if match:
+                    wait_time = int(match.group(1))
+                
+                if key_idx < len(api_keys) - 1:
+                    print(f"⏳ Switching to next API key (key {key_idx + 2}/{len(api_keys)})...")
+                    time.sleep(2)  # Brief pause before switching
                     continue
                 else:
-                    print(f"❌ Quota exceeded on all attempts - API key exhausted")
+                    print(f"❌ All {len(api_keys)} API keys exhausted")
                     return ""
-            
-            # Retry on timeout/deadline errors
-            elif "504" in error_msg or "Deadline" in error_msg or "timeout" in error_msg.lower() or "503" in error_msg:
-                if attempt < max_retries - 1:
-                    # Progressive backoff: 10s, 20s, 30s (longer for server issues)
-                    wait_time = (attempt + 1) * 10
-                    print(f"⏳ Waiting {wait_time}s before retry...")
-                    time.sleep(wait_time)
-                    continue
-            
-            # For other non-retryable errors, don't retry
-            print(f"❌ API call failed with non-retryable error after {attempt + 1} attempts")
-            return ""
+            else:
+                # For non-quota errors, fail fast
+                print(f"❌ [Gemini API] Request failed after {duration:.1f}s: {error_msg[:100]}")
+                return ""
     
-    print(f"❌ All {max_retries} retry attempts exhausted")
     return ""
 
 
-def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
+def _configure_model(config_dir: Optional[Path] = None):
+    """
+    Configure Gemini model with multi-key fallback support.
+    
+    Returns:
+        tuple: (model instance or None, list of API keys)
+        
+    Search order (loads ALL keys for fallback):
+    1. ENV_VAR: GEMINI_API_KEY
+    2. secrets/api_keys.txt (multi-line, one key per line)
+    3. secrets/api_key.txt (single key, legacy)
+    """
     # Load all API keys (with fallback support)
     api_keys = []
     
@@ -202,7 +244,7 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     
     if not api_keys:
         print("❌ GEMINI_API_KEY not found. Set env or add secrets/api_keys.txt")
-        return None
+        return None, []
     
     print(f"📋 Loaded {len(api_keys)} API key(s) for fallback")
     
@@ -237,7 +279,8 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
         try:
             # Mask key for display (show first 10 chars only)
             masked_key = api_key[:10] + "..." if len(api_key) > 10 else api_key
-            print(f"🔑 Trying API key {key_idx}/{len(api_keys)}: {masked_key}")
+            if len(api_keys) > 1:
+                print(f"🔑 Trying API key {key_idx}/{len(api_keys)}: {masked_key}")
             
             # Configure with this key
             getattr(genai, "configure")(api_key=api_key)
@@ -248,8 +291,24 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
             
             # CRITICAL: Test API with a real call to catch errors early
             _ = model.generate_content("ping")
-            print(f"✅ API key {key_idx} working with model: {try_name}")
-            return model
+            if len(api_keys) > 1:
+                print(f"✅ API key {key_idx} working with model: {try_name}")
+            return model, api_keys
+            
+        except Exception as e:
+            error_msg = str(e)
+            last_error = error_msg
+            
+            # Check if it's a quota error (429)
+            if "429" in error_msg or "quota" in error_msg.lower():
+                print(f"⚠️  API key {key_idx} quota exceeded: {error_msg[:100]}")
+                
+                # SMART WAIT: If not last key, wait 2 seconds before trying next
+                # This helps with rate limiting issues
+                if key_idx < len(api_keys):
+                    import time
+                    print(f"   ⏳ Waiting 2s before trying next key...")
+                    time.sleep(2)
             
         except Exception as e:
             error_msg = str(e)
@@ -278,7 +337,7 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
                         model = Model(default_name)
                         _ = model.generate_content("ping")
                         print(f"   ✅ Fallback to {default_name} succeeded")
-                        return model
+                        return model, api_keys
                     except Exception as e2:
                         print(f"   ❌ Fallback also failed: {str(e2)[:100]}")
                 
@@ -288,26 +347,18 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     # All keys failed
     print(f"\n❌ CRITICAL: All {len(api_keys)} API key(s) failed!")
     print(f"   Last error: {last_error[:200] if last_error else 'Unknown'}")
-    print("   Possible causes:")
-    print("   1. All keys exceeded quota (wait for reset)")
-    print("   2. API keys are invalid")
-    print("   3. Generative Language API not enabled")
-    print("   4. Billing not set up")
-    print(f"   5. Visit: https://console.developers.google.com/apis/api/generativelanguage.googleapis.com")
-    return None
+    return None, []
 
 
-def _clean_source_text(model, text: str, prompts: dict) -> str:
+def _clean_source_text(model, text: str, prompts: dict, api_keys: Optional[list] = None) -> str:
     tpl = prompts.get("clean_template") or (
         "\nYour task is to clean a raw Arabic transcript for a YouTube script.\n\nCRITICAL RULES FOR CLEANING:\n1. Remove all introductory and credit-related text (production/company/publisher/CTA/etc.).\n2. Start directly with the book's main content or author's introduction.\n3. Keep tone simple and conversational.\n4. Output ONLY the core content in Arabic.\n5. Do not translate or summarize.\n\nArabic Text:\n{text}\n"
     )
     prompt = _fmt(tpl, text=text)
-    # Use more retries for large texts (5 attempts instead of 3)
-    max_retries = 5 if len(text) > 15000 else 3
-    return _gen(model, prompt, max_retries=max_retries)
+    return _gen(model, prompt, api_keys=api_keys)
 
 
-def _clean_english_transcript(model, text: str, prompts: dict) -> str:
+def _clean_english_transcript(model, text: str, prompts: dict, api_keys: Optional[list] = None) -> str:
     """
     Clean English transcript (remove intro/outro, fix typos).
     Used when source video is already in English.
@@ -316,25 +367,23 @@ def _clean_english_transcript(model, text: str, prompts: dict) -> str:
         "\nYour task is to clean a raw English transcript from YouTube.\n\nCRITICAL RULES:\n1. Remove ALL intro/outro (channel promotions, subscribe requests, credits).\n2. Start directly with the book's main content.\n3. Fix obvious auto-transcription errors and typos.\n4. Remove repeated sentences or filler.\n5. Do NOT translate, summarize, or add new content.\n6. Output ONLY the core book content in English.\n\nEnglish Transcript:\n{text}\n"
     )
     prompt = _fmt(tpl, text=text)
-    # Use more retries for large texts (5 attempts instead of 3)
-    max_retries = 5 if len(text) > 15000 else 3
-    return _gen(model, prompt, max_retries=max_retries)
+    return _gen(model, prompt, api_keys=api_keys)
 
 
-def _translate_to_english(model, text: str, prompts: dict) -> str:
+def _translate_to_english(model, text: str, prompts: dict, api_keys: Optional[list] = None) -> str:
     tpl = prompts.get("translate_template") or (
         "\nTranslate the following Arabic text into fluent, natural English.\n\nSTRICT RULES:\n- Preserve ALL details, events, and examples exactly as in the Arabic.\n- Keep rhetorical and motivational style.\n- Do NOT add, omit, or summarize.\n- Output only the full English translation.\n\nArabic Text:\n{text}\n"
     )
     prompt = _fmt(tpl, text=text)
-    return _gen(model, prompt)
+    return _gen(model, prompt, api_keys=api_keys)
 
 
-def _get_official_book_name(model, arabic_text: str, prompts: dict) -> Tuple[Optional[str], Optional[str]]:
+def _get_official_book_name(model, arabic_text: str, prompts: dict, api_keys: Optional[list] = None) -> Tuple[Optional[str], Optional[str]]:
     tpl = prompts.get("book_meta_template") or (
         "\nExtract the official English book title and author for the mentioned book.\nReturn JSON only: {\"book_name\":\"<English Name>\",\"author_name\":\"<English Author>\"}\n\nText:\n{arabic_text}\n"
     )
     prompt = _fmt(tpl, arabic_text=arabic_text)
-    raw = _gen(model, prompt, mime_type="application/json")
+    raw = _gen(model, prompt, mime_type="application/json", api_keys=api_keys)
     try:
         data = json.loads(raw)
         return data.get("book_name"), data.get("author_name")
@@ -342,7 +391,7 @@ def _get_official_book_name(model, arabic_text: str, prompts: dict) -> Tuple[Opt
         return None, None
 
 
-def _get_book_playlist(model, book_name: str, author_name: Optional[str], prompts: dict) -> Optional[str]:
+def _get_book_playlist(model, book_name: str, author_name: Optional[str], prompts: dict, api_keys: Optional[list] = None) -> Optional[str]:
     """
     Classify book into a YouTube playlist category.
     Returns one of the predefined playlist names.
@@ -363,7 +412,7 @@ def _get_book_playlist(model, book_name: str, author_name: Optional[str], prompt
         "Return ONLY the category name (exactly as written above), nothing else."
     )
     prompt = _fmt(tpl, book_name=book_name, author_name=author_name or "Unknown")
-    raw = _gen(model, prompt)
+    raw = _gen(model, prompt, api_keys=api_keys)
 
     # Clean and validate the response
     category = raw.strip()
@@ -397,12 +446,12 @@ def _get_book_playlist(model, book_name: str, author_name: Optional[str], prompt
     return "Self-Development"
 
 
-def _generate_titles(model, book_name: str, prompts: dict) -> Optional[dict]:
+def _generate_titles(model, book_name: str, prompts: dict, api_keys: Optional[list] = None) -> Optional[dict]:
     tpl = prompts.get("titles_template") or (
         "\nGenerate JSON with these keys:\n- main_title: Must be exactly the English name of the book ({book_name}), unchanged.\n- subtitle: Creative subtitle in English, max 3 words only.\n- footer: Engaging footer in English, must be 4 or 5 words.\n\nReturn ONLY valid JSON.\n"
     )
     prompt = _fmt(tpl, book_name=book_name)
-    raw = _gen(model, prompt, mime_type="application/json")
+    raw = _gen(model, prompt, mime_type="application/json", api_keys=api_keys)
     try:
         data = json.loads(raw)
         return data
@@ -546,7 +595,7 @@ def _get_book_cover(title: str, author: Optional[str], model=None) -> Optional[s
     return None
 
 
-def _scriptify_youtube(model, english_text: str, prompts: dict) -> str:
+def _scriptify_youtube(model, english_text: str, prompts: dict, api_keys: Optional[list] = None) -> str:
     tpl = prompts.get("youtube_script_template")
     if isinstance(tpl, list):
         tpl = "\n".join(tpl)
@@ -561,7 +610,7 @@ def _scriptify_youtube(model, english_text: str, prompts: dict) -> str:
             "English Text:\n{text}\n"
         )
     prompt = _fmt(tpl, text=english_text)
-    return _gen(model, prompt)
+    return _gen(model, prompt, api_keys=api_keys)
 
 
 def cover_only(config_dir: Path, output_titles: Path) -> Optional[str]:
@@ -572,7 +621,7 @@ def cover_only(config_dir: Path, output_titles: Path) -> Optional[str]:
     Returns the chosen cover URL or local path if downloaded.
     """
     # Configure Gemini model for smart cover lookup
-    model = _configure_model(config_dir)
+    model, api_keys = _configure_model(config_dir)
     
     try:
         titles = json.loads(Path(output_titles).read_text(encoding="utf-8"))
@@ -672,7 +721,7 @@ def _download_cover_to_local(url: str, dest_dir: Path, name_hint: Optional[str] 
 
 
 def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titles: Path) -> Optional[str]:
-    model = _configure_model(config_dir)
+    model, api_keys = _configure_model(config_dir)
     if not model:
         return None
     prompts = _load_prompts(config_dir)
@@ -692,9 +741,9 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
     
     stage_start = time.time()
     if detected_lang == "ar":
-        cleaned = _clean_source_text(model, text, prompts)
+        cleaned = _clean_source_text(model, text, prompts, api_keys=api_keys)
     else:
-        cleaned = _clean_english_transcript(model, text, prompts)
+        cleaned = _clean_english_transcript(model, text, prompts, api_keys=api_keys)
     stage_duration = time.time() - stage_start
     
     if not cleaned:
@@ -712,7 +761,7 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
         print(f"📊 Input size: {len(cleaned):,} chars ({len(cleaned.split()):,} words)")
         
         stage_start = time.time()
-        english = _translate_to_english(model, cleaned, prompts)
+        english = _translate_to_english(model, cleaned, prompts, api_keys=api_keys)
         stage_duration = time.time() - stage_start
         
         if not english:
@@ -747,7 +796,7 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
         print(f"📊 Input size: {len(english):,} chars ({len(english.split()):,} words)")
         
         stage_start = time.time()
-        scriptified = _scriptify_youtube(model, english, prompts)
+        scriptified = _scriptify_youtube(model, english, prompts, api_keys=api_keys)
         stage_duration = time.time() - stage_start
         
         if not scriptified:
@@ -787,7 +836,7 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
     if not existing_book_name:
         print("🔍 Extracting book name from transcript...")
         stage_start = time.time()
-        book_name, author_name = _get_official_book_name(model, text, prompts)
+        book_name, author_name = _get_official_book_name(model, text, prompts, api_keys=api_keys)
         stage_duration = time.time() - stage_start
         
         if not book_name:
@@ -803,7 +852,7 @@ def main(transcript_path: Path, config_dir: Path, output_text: Path, output_titl
 
     print("\n🎯 Generating YouTube titles...")
     stage_start = time.time()
-    titles = _generate_titles(model, book_name, prompts)
+    titles = _generate_titles(model, book_name, prompts, api_keys=api_keys)
     stage_duration = time.time() - stage_start
     
     if not titles:

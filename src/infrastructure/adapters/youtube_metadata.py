@@ -35,7 +35,18 @@ def _fmt(tpl: str, **values: str) -> str:
     return out
 
 
-def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
+def _configure_model(config_dir: Optional[Path] = None):
+    """
+    Configure Gemini model with multi-key fallback support.
+    
+    Returns:
+        tuple: (model instance or None, list of API keys)
+        
+    Search order (loads ALL keys for fallback):
+    1. ENV_VAR: GEMINI_API_KEY
+    2. secrets/api_keys.txt (multi-line, one key per line)
+    3. secrets/api_key.txt (single key, legacy)
+    """
     # Load all API keys (with fallback support)
     api_keys = []
     
@@ -75,7 +86,7 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     
     if not api_keys:
         print("❌ GEMINI_API_KEY not found. Set env or add secrets/api_keys.txt")
-        return None
+        return None, []
     
     print(f"📋 Loaded {len(api_keys)} API key(s) for fallback")
     
@@ -125,7 +136,7 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
             
             if len(api_keys) > 1:
                 print(f"✅ API key {key_idx} working with model: {try_name}")
-            return model
+            return model, api_keys
             
         except Exception as e:
             error_msg = str(e)
@@ -146,7 +157,7 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
                         model = Model(default_name)
                         _ = model.generate_content("ping")
                         print(f"   ✅ Fallback to {default_name} succeeded")
-                        return model
+                        return model, api_keys
                     except Exception as e2:
                         print(f"   ❌ Fallback also failed: {str(e2)[:100]}")
                 
@@ -156,19 +167,77 @@ def _configure_model(config_dir: Optional[Path] = None) -> Optional[object]:
     # All keys failed
     print(f"\n❌ CRITICAL: All {len(api_keys)} API key(s) failed!")
     print(f"   Last error: {last_error[:200] if last_error else 'Unknown'}")
-    return None
+    return None, []
 
 
-def _gen(model, prompt: str, mime_type: str = "text/plain") -> str:
-    try:
-        resp = model.generate_content(prompt, generation_config={"response_mime_type": mime_type})
-        return getattr(resp, "text", "") or ""
-    except Exception as e:
-        print(f"API call failed: {e}")
-        return ""
+def _gen(model, prompt: str, mime_type: str = "text/plain", api_keys: Optional[list] = None) -> str:
+    """
+    Generate content with multi-key fallback on quota errors (429).
+    
+    Args:
+        model: Initial Gemini model instance
+        prompt: The prompt to send
+        mime_type: Response MIME type
+        api_keys: List of API keys for fallback (optional)
+    
+    Returns:
+        Generated text or empty string on failure
+    """
+    import time
+    import importlib
+    
+    # If no api_keys provided, try single attempt
+    if not api_keys:
+        try:
+            resp = model.generate_content(prompt, generation_config={"response_mime_type": mime_type})
+            return getattr(resp, "text", "") or ""
+        except Exception as e:
+            print(f"API call failed: {e}")
+            return ""
+    
+    # Multi-key retry logic
+    genai = importlib.import_module("google.generativeai")
+    Model = getattr(genai, "GenerativeModel")
+    
+    for key_idx, api_key in enumerate(api_keys):
+        try:
+            # Configure with this key
+            getattr(genai, "configure")(api_key=api_key)
+            
+            # Try to generate content
+            resp = model.generate_content(prompt, generation_config={"response_mime_type": mime_type})
+            return getattr(resp, "text", "") or ""
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Check if it's a quota error (429)
+            if "429" in error_msg or "quota" in error_msg.lower():
+                print(f"⚠️  API key {key_idx + 1}/{len(api_keys)}: Quota exceeded")
+                
+                # Parse retry delay from error message
+                import re
+                match = re.search(r'retry in ([\d.]+)s', error_msg)
+                if match:
+                    delay = float(match.group(1))
+                    print(f"⏱️  Waiting {delay:.1f}s before trying next key...")
+                    time.sleep(delay)
+                
+                # Try next key
+                if key_idx < len(api_keys) - 1:
+                    print(f"🔄 Switching to API key {key_idx + 2}/{len(api_keys)}")
+                    continue
+                else:
+                    print(f"❌ All {len(api_keys)} API keys exhausted!")
+                    return ""
+            else:
+                print(f"API call failed: {e}")
+                return ""
+    
+    return ""
 
 
-def _generate_title(model, book_name: str, prompts: dict) -> Optional[str]:
+def _generate_title(model, book_name: str, prompts: dict, api_keys: Optional[list] = None) -> Optional[str]:
     tpl = prompts.get("youtube_title_template") or (
         "You are an expert YouTube title generator.\n\n"
         "Your task: create ONE powerful, catchy, and mysterious video title in English for a YouTube book summary video.\n\n"
@@ -180,7 +249,7 @@ def _generate_title(model, book_name: str, prompts: dict) -> Optional[str]:
         "- Avoid generic phrases. Make it sound unique and click-worthy.\n"
     )
     prompt = _fmt(tpl, book_name=book_name)
-    title_text = _gen(model, prompt, mime_type="text/plain")
+    title_text = _gen(model, prompt, mime_type="text/plain", api_keys=api_keys)
     if not title_text:
         return None
     title_text = title_text.strip().strip('"')
@@ -188,7 +257,7 @@ def _generate_title(model, book_name: str, prompts: dict) -> Optional[str]:
     return title_text or None
 
 
-def _generate_description(model, book_name: str, prompts: dict) -> Optional[str]:
+def _generate_description(model, book_name: str, prompts: dict, api_keys: Optional[list] = None) -> Optional[str]:
     tpl = prompts.get("youtube_description_template") or (
         "Write a compelling YouTube video description for a book summary video.\n\n"
         "Constraints:\n"
@@ -201,7 +270,7 @@ def _generate_description(model, book_name: str, prompts: dict) -> Optional[str]
         "Book Name: {book_name}\n"
     )
     prompt = _fmt(tpl, book_name=book_name)
-    desc_text = _gen(model, prompt, mime_type="text/plain")
+    desc_text = _gen(model, prompt, mime_type="text/plain", api_keys=api_keys)
     if not desc_text:
         return None
 
@@ -449,7 +518,7 @@ def _adjust_timestamps_to_video(timestamps: dict, actual_duration: float) -> dic
     }
 
 
-def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict) -> list[dict]:
+def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict, api_keys: Optional[list] = None) -> list[dict]:
     """
     Use AI to generate smart chapter titles from GROUPED timestamp segments.
     Returns: [{"time": "0:00", "title": "Introduction"}, ...]
@@ -518,10 +587,10 @@ def _generate_chapter_titles_with_ai(model, timestamps: dict, prompts: dict) -> 
         "Chapters:\n" + "\n".join(segment_texts)
     )
 
-    # Retry logic: try 3 times before falling back to generic titles
+    # Retry logic with multi-key fallback: try 3 times before falling back to generic titles
     max_retries = 3
     for attempt in range(1, max_retries + 1):
-        result = _gen(model, prompt, mime_type="application/json")
+        result = _gen(model, prompt, mime_type="application/json", api_keys=api_keys)
         
         if not result:
             print(f"⚠️ AI failed to generate chapter titles (attempt {attempt}/{max_retries})")
@@ -581,14 +650,15 @@ def _generate_description_with_timestamps(
     prompts: dict,
     run_dir: Optional[Path] = None,
     author: Optional[str] = None,
-    config_dir: Optional[Path] = None
+    config_dir: Optional[Path] = None,
+    api_keys: Optional[list] = None
 ) -> Optional[str]:
     """
     Generate description with timestamps appended.
     Adjusts timestamps to match actual video duration if available.
     """
     # Generate base description
-    base_desc = _generate_description(model, book_name, prompts)
+    base_desc = _generate_description(model, book_name, prompts, api_keys=api_keys)
     if not base_desc:
         return None
 
@@ -618,7 +688,7 @@ def _generate_description_with_timestamps(
 
     # Generate chapter titles using AI
     print("📍 Generating chapter titles with AI...")
-    chapters = _generate_chapter_titles_with_ai(model, timestamps, prompts)
+    chapters = _generate_chapter_titles_with_ai(model, timestamps, prompts, api_keys=api_keys)
 
     if not chapters:
         print("⚠️ Could not generate chapters")
@@ -791,6 +861,7 @@ def _generate_ai_tags(
     author_name: Optional[str],
     prompts: dict,
     target_count: int = 32,
+    api_keys: Optional[list] = None
 ) -> list[str]:
     """
     Generate AI-powered topic tags using Gemini with optimized SEO-focused prompt.
@@ -841,9 +912,8 @@ Return ONLY comma-separated tags in one line.
 ALL LOWERCASE, complete phrases, NO explanations."""
 
     try:
-        # Call Gemini
-        resp = model.generate_content(prompt)
-        raw = resp.text.strip() if hasattr(resp, 'text') else ""
+        # Call Gemini with multi-key fallback
+        raw = _gen(model, prompt, mime_type="text/plain", api_keys=api_keys)
 
         # Parse response (supports both plain text CSV and JSON)
         if raw:
@@ -1096,7 +1166,7 @@ def _merge_tags(
     return selected, raw_total, api_total
 
 
-def _generate_thumbnail_elements(model, book_title: str, author_name: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+def _generate_thumbnail_elements(model, book_title: str, author_name: Optional[str], api_keys: Optional[list] = None) -> tuple[Optional[str], Optional[str], Optional[str]]:
     # Prompt as requested: return ONLY Hook and Subtitle texts (no labels), optimized for thumbnail
     author = author_name or "Unknown"
     prompt = (
@@ -1114,7 +1184,7 @@ def _generate_thumbnail_elements(model, book_title: str, author_name: Optional[s
         "- Both elements must be ready to use directly on a thumbnail.\n"
         "- Return only one strongest option, fully optimized for a viral, professional thumbnail.\n"
     )
-    text = _gen(model, prompt, mime_type="text/plain")
+    text = _gen(model, prompt, mime_type="text/plain", api_keys=api_keys)
     if not text:
         return None, None, None
     # Parse first non-empty lines: expect 2 lines (hook, subtitle); third line optional (visual)
@@ -1187,12 +1257,12 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
         return None
 
     prompts = _load_prompts(config_dir)
-    model = _configure_model(config_dir)
+    model, api_keys = _configure_model(config_dir)
     if not model:
         return None
 
     # Generate title
-    yt_title = _generate_title(model, book_name, prompts)
+    yt_title = _generate_title(model, book_name, prompts, api_keys=api_keys)
 
     # Generate description with timestamps if available
     run_dir = Path(titles_json).parent
@@ -1206,12 +1276,12 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
         print("📍 Generating description with timestamps...")
         yt_desc = _generate_description_with_timestamps(
             model, book_name, timestamps_path, prompts,
-            run_dir=run_dir, author=author, config_dir=config_dir
+            run_dir=run_dir, author=author, config_dir=config_dir, api_keys=api_keys
         )
 
     # Fallback to basic description if timestamps unavailable
     if not yt_desc:
-        yt_desc = _generate_description(model, book_name, prompts)
+        yt_desc = _generate_description(model, book_name, prompts, api_keys=api_keys)
         # Add Amazon link to basic description too (only if generation succeeded)
         if yt_desc:
             yt_desc = _add_amazon_link_to_description(yt_desc, book_name, author, config_dir)
@@ -1223,7 +1293,7 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
     density_tags = _build_density_tags(book_name, author)
 
     # Generate AI-powered topic tags (Gemini)
-    ai_tags = _generate_ai_tags(model, book_name, author, prompts, target_count=60)
+    ai_tags = _generate_ai_tags(model, book_name, author, prompts, target_count=60, api_keys=api_keys)
 
     tags, total_raw_chars, total_api_chars = _merge_tags(
         basic_tags,
@@ -1234,7 +1304,7 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
     )
 
     if total_raw_chars < MIN_TOTAL_TAG_CHARS:
-        extra_ai = _generate_ai_tags(model, book_name, author, prompts, target_count=90)
+        extra_ai = _generate_ai_tags(model, book_name, author, prompts, target_count=90, api_keys=api_keys)
         if extra_ai:
             ai_tags.extend(extra_ai)
             tags, total_raw_chars, total_api_chars = _merge_tags(
@@ -1253,7 +1323,7 @@ def main(titles_json: Path, config_dir: Path) -> Optional[str]:
         print(f"✅ Tags length {total_raw_chars} chars (>={MIN_TOTAL_TAG_CHARS}), API chars {total_api_chars}")
 
     # Generate thumbnail elements: hook/sub/image word
-    hook, sub, img = _generate_thumbnail_elements(model, book_name, author)
+    hook, sub, img = _generate_thumbnail_elements(model, book_name, author, api_keys=api_keys)
 
     # UPDATE (not overwrite) existing titles - preserve all original fields
     # This prevents race condition with process.py writing same file

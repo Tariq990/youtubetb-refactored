@@ -2,6 +2,9 @@
 title YouTubeTB - Install Dependencies
 color 0A
 
+:: Change to script directory (critical fix)
+cd /d "%~dp0"
+
 echo ========================================
 echo   YouTubeTB - Install Dependencies
 echo ========================================

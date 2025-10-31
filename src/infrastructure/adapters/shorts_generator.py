@@ -920,10 +920,11 @@ def _generate_short_script(
     book_name: str,
     book_type: str,
     excerpt: str,
-    prompts: dict
+    prompts: dict,
+    api_keys_found: Optional[list] = None  # NEW: List of (source, key) tuples for fallback
 ) -> Optional[str]:
     """
-    Generate engaging 60s short script using AI
+    Generate engaging 60s short script using AI with auto-retry on quota errors
 
     Args:
         model: Gemini model instance
@@ -931,6 +932,7 @@ def _generate_short_script(
         book_type: Category (Self-Development, Thriller, etc.)
         excerpt: Powerful excerpt from the book
         prompts: Prompt templates
+        api_keys_found: List of (source_name, api_key) tuples for fallback (NEW)
 
     Returns:
         Short script (80-120 words) or None
@@ -1047,23 +1049,68 @@ Example 3: "Here's the truth about building better habits: Motivation is overrat
 
 Now write the voice-over script for {book_name}:"""
 
-    try:
-        response = model.generate_content(prompt)
-        script = response.text.strip()
+    # ===== AUTO-RETRY WITH FALLBACK API KEYS =====
+    max_retries = len(api_keys_found) if api_keys_found else 1
+    
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            script = response.text.strip()
 
-        # Clean up
-        script = re.sub(r'^["\']+|["\']+$', '', script)
-        script = script.strip()
+            # Clean up
+            script = re.sub(r'^["\']+|["\']+$', '', script)
+            script = script.strip()
 
-        # Validate word count (80-120 words)
-        word_count = len(script.split())
-        if word_count < 60 or word_count > 150:
-            print(f"⚠️ Script word count ({word_count}) outside range, but proceeding...")
+            # Validate word count (80-120 words)
+            word_count = len(script.split())
+            if word_count < 60 or word_count > 150:
+                print(f"⚠️ Script word count ({word_count}) outside range, but proceeding...")
 
-        return script
-    except Exception as e:
-        print(f"❌ Failed to generate short script: {e}")
-        return None
+            return script
+            
+        except Exception as e:
+            error_str = str(e)
+            
+            # Check if it's a 429 quota error
+            if "429" in error_str or "quota" in error_str.lower():
+                print(f"❌ API Key {attempt + 1}/{max_retries} quota exceeded: {e}")
+                
+                # If we have backup keys, try next one
+                if api_keys_found and attempt < max_retries - 1:
+                    # Extract retry delay from error (if provided)
+                    retry_delay = 0
+                    import re as regex_module
+                    delay_match = regex_module.search(r'retry in (\d+(?:\.\d+)?)', error_str)
+                    if delay_match:
+                        retry_delay = float(delay_match.group(1))
+                    
+                    # Wait if API suggested a delay
+                    if retry_delay > 0:
+                        print(f"⏳ Waiting {retry_delay:.1f}s as suggested by API...")
+                        time.sleep(retry_delay)
+                    
+                    # Switch to next API key
+                    next_source, next_key = api_keys_found[attempt + 1]
+                    print(f"🔄 Switching to backup API key {attempt + 2}/{max_retries} from: {next_source}")
+                    
+                    # Reconfigure Gemini with new key
+                    import google.generativeai as genai
+                    genai.configure(api_key=next_key)  # type: ignore[attr-defined]
+                    model = genai.GenerativeModel("gemini-2.5-flash")  # type: ignore[attr-defined]
+                    
+                    # Continue to next iteration (retry with new key)
+                    continue
+                else:
+                    print(f"❌ All {max_retries} API keys exhausted")
+                    return None
+            else:
+                # Non-quota error - fail immediately
+                print(f"❌ Failed to generate short script: {e}")
+                return None
+    
+    # All retries exhausted
+    print(f"❌ Failed after {max_retries} attempts with all available API keys")
+    return None
 
 
 def _find_best_excerpt(translate_path: Path, max_chars: int = 800) -> str:
@@ -1595,7 +1642,7 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
 
     # Step 2: Generate script with AI
     if model is None:
-        # Load Gemini
+        # Load Gemini with multi-key fallback support
         try:
             # Suppress STDERR warnings from Google's C++ libraries during import
             import sys
@@ -1608,75 +1655,79 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
                     sys.stderr.close()
                 sys.stderr = _original_stderr
 
-            # ===== GEMINI API KEY FALLBACK SYSTEM (Multi-file support) =====
-            # Same order as cookies_helper for consistency
-            api_key = None
+            # ===== GEMINI API KEY FALLBACK SYSTEM (Multi-key support) =====
+            # Collect ALL valid API keys for fallback on quota errors
+            api_keys_found = []  # List of (source_name, api_key) tuples
             
             # Get repository root (go up 3 levels from this file)
             repo_root = Path(__file__).resolve().parents[3]
             
             # Priority 1: Environment variable
-            api_key = os.getenv("GEMINI_API_KEY")
+            env_key = os.getenv("GEMINI_API_KEY")
+            if env_key and len(env_key) == 39 and env_key.startswith("AIzaSy"):
+                api_keys_found.append(("ENV_VAR", env_key))
             
-            if not api_key:
-                # Priority 2-5: Check multiple API key files (same as cookies_helper)
-                api_key_paths = [
-                    repo_root / "secrets" / ".env",           # Priority 2: Main .env
-                    repo_root / "secrets" / "api_keys.txt",   # Priority 3: Shared API keys
-                    repo_root / "secrets" / "api_key.txt",    # Priority 4: Legacy single key
-                    repo_root / ".env"                        # Priority 5: Root .env
-                ]
-                
-                for idx, key_path in enumerate(api_key_paths, 1):
-                    if key_path.exists():
-                        try:
-                            content = key_path.read_text(encoding="utf-8").strip()
-                            
-                            # Handle .env format (KEY=value)
-                            if key_path.name.endswith('.env'):
-                                for line in content.splitlines():
-                                    line = line.strip()
-                                    if line.startswith("GEMINI_API_KEY="):
-                                        extracted_key = line.split("=", 1)[1].strip()
-                                        if extracted_key and len(extracted_key) == 39:  # Valid Gemini key length
-                                            api_key = extracted_key
-                                            print(f"[Gemini] ✓ Found API key in: {key_path.name}")
-                                            break
-                            
-                            # Handle plain text format (key only)
-                            else:
-                                # For multi-line files, try each line
-                                for line in content.splitlines():
-                                    line = line.strip()
-                                    # Skip comments and check for valid Gemini key format
-                                    if line and not line.startswith("#") and len(line) == 39 and line.startswith("AIzaSy"):
-                                        api_key = line
-                                        print(f"[Gemini] ✓ Found API key in: {key_path.name}")
-                                        break  # Use first valid key from this file
-                            
-                            if api_key:
-                                break  # Stop after finding first valid key
+            # Priority 2-5: Check multiple API key files
+            api_key_paths = [
+                repo_root / "secrets" / ".env",           # Priority 2: Main .env
+                repo_root / "secrets" / "api_keys.txt",   # Priority 3: Shared API keys (multi-line)
+                repo_root / "secrets" / "api_key.txt",    # Priority 4: Legacy single key
+                repo_root / ".env"                        # Priority 5: Root .env
+            ]
+            
+            for key_path in api_key_paths:
+                if key_path.exists():
+                    try:
+                        content = key_path.read_text(encoding="utf-8").strip()
                         
-                        except Exception as e:
-                            print(f"[Gemini] ⚠️  Failed to read {key_path.name}: {e}")
+                        # Handle .env format (KEY=value)
+                        if key_path.name.endswith('.env'):
+                            for line in content.splitlines():
+                                line = line.strip()
+                                if line.startswith("GEMINI_API_KEY="):
+                                    extracted_key = line.split("=", 1)[1].strip()
+                                    if extracted_key and len(extracted_key) == 39 and extracted_key.startswith("AIzaSy"):
+                                        api_keys_found.append((key_path.name, extracted_key))
+                        
+                        # Handle plain text format (multi-line support for api_keys.txt)
+                        else:
+                            for line in content.splitlines():
+                                line = line.strip()
+                                # Skip comments and validate Gemini key format
+                                if line and not line.startswith("#") and len(line) == 39 and line.startswith("AIzaSy"):
+                                    # Check for duplicates (avoid adding same key twice)
+                                    if not any(k == line for _, k in api_keys_found):
+                                        api_keys_found.append((key_path.name, line))
+                    
+                    except Exception as e:
+                        print(f"[Gemini] ⚠️  Failed to read {key_path.name}: {e}")
             
-            if not api_key:
+            if not api_keys_found:
                 print("[Gemini] ❌ No valid GEMINI_API_KEY found")
                 print("[Gemini] 📂 Locations checked:")
                 print("   - Environment variable: GEMINI_API_KEY")
                 print("   - secrets/.env (GEMINI_API_KEY=...)")
-                print("   - secrets/api_keys.txt")
+                print("   - secrets/api_keys.txt (one key per line)")
                 print("   - secrets/api_key.txt")
                 print("   - .env (root)")
                 print("[Gemini] 💡 Get free API key from: https://makersuite.google.com/app/apikey")
                 print("[Gemini] 🔐 Save with cookies_helper.py or manually")
                 return None
+            
+            # Use first key (primary)
+            source_name, api_key = api_keys_found[0]
+            print(f"[Gemini] 🔑 Using primary API key from: {source_name}")
+            if len(api_keys_found) > 1:
+                print(f"[Gemini] 📋 {len(api_keys_found)-1} backup API key(s) available for fallback")
 
             genai.configure(api_key=api_key)  # type: ignore[attr-defined]
             model = genai.GenerativeModel("gemini-2.5-flash")  # type: ignore[attr-defined]
         except Exception as e:
             print(f"❌ Failed to load Gemini: {e}")
             return None
+    else:
+        # Model was passed - create api_keys_found for consistency (single key)
+        api_keys_found = [("passed_model", "N/A")]
 
     # Check if audio already exists (to skip TTS steps)
     audio_path = run_dir / "short_narration.mp3"
@@ -1685,9 +1736,9 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
         _print_progress(2, 7, "Audio exists (skip)", 100)
         # Don't print step 3, just move to step 4
     else:
-        # Step 2: Generate script with AI
+        # Step 2: Generate script with AI (pass api_keys for fallback)
         _print_progress(2, 7, "AI script", 0)
-        script = _generate_short_script(model, book_name, book_type, excerpt, {})
+        script = _generate_short_script(model, book_name, book_type, excerpt, {}, api_keys_found)
         if not script:
             return None
 
