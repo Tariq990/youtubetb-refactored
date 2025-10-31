@@ -502,7 +502,8 @@ def test_gemini_api(api_key):
     
     try:
         genai.configure(api_key=api_key)  # type: ignore
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')  # type: ignore
+        # Use stable production model (same as pipeline)
+        model = genai.GenerativeModel('gemini-2.5-flash')  # type: ignore
         
         start = time.time()
         response = model.generate_content("Reply: 'API key works'")
@@ -511,7 +512,7 @@ def test_gemini_api(api_key):
         if response and response.text:
             logging.info(f"Gemini API test passed: {elapsed:.1f}s")
             return True, "API key works", {
-                "model": "gemini-2.0-flash-exp",
+                "model": "gemini-2.5-flash",
                 "response_time": round(elapsed, 1)
             }
         
