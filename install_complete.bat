@@ -43,16 +43,16 @@ echo [2/8] Checking Python installation...
 :: Check if Python is installed
 python --version >nul 2>&1
 if %errorLevel% neq 0 (
-    echo ⚠️  Python not found. Downloading Python 3.11...
+    echo ⚠️  Python not found. Downloading Python 3.13...
     
     :: Create temp directory
     if not exist "%TEMP%\youtubetb_install" mkdir "%TEMP%\youtubetb_install"
     pushd "%TEMP%\youtubetb_install"
     
-    :: Download Python 3.11.9 installer
+    :: Download Python 3.13.0 installer (compatible version)
     echo    Downloading Python installer ^(~30 MB^)...
     echo    Please wait, this may take 1-3 minutes...
-    powershell -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host '    Downloading ' -NoNewline; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'python_installer.exe'; Write-Host 'Done!'"
+    powershell -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host '    Downloading ' -NoNewline; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe' -OutFile 'python_installer.exe'; Write-Host 'Done!'"
     
     if not exist "python_installer.exe" (
         echo ❌ Failed to download Python installer!
@@ -62,7 +62,7 @@ if %errorLevel% neq 0 (
     )
     
     :: Install Python with interactive installer (more reliable)
-    echo    Installing Python 3.11.9...
+    echo    Installing Python 3.13.0...
     echo    ⚠️  IMPORTANT: Check "Add Python to PATH" during installation!
     echo.
     start /wait python_installer.exe InstallAllUsers=1 PrependPath=1 Include_pip=1 Include_test=0
@@ -101,26 +101,7 @@ if %errorLevel% neq 0 (
     :: Check Python version
     for /f "tokens=2" %%V in ('python --version 2^>^&1') do set PYTHON_VERSION=%%V
     echo ✅ Python !PYTHON_VERSION! found
-    
-    :: Verify version is 3.11+
-    for /f "tokens=1,2 delims=." %%a in ("!PYTHON_VERSION!") do (
-        set MAJOR=%%a
-        set MINOR=%%b
-    )
-    
-    if !MAJOR! LSS 3 (
-        echo ❌ Python version too old. Requires Python 3.11+
-        echo Please install from: https://www.python.org/downloads/
-        pause
-        exit /b 1
-    )
-    
-    if !MAJOR! EQU 3 if !MINOR! LSS 11 (
-        echo ⚠️  Warning: Python 3.!MINOR! detected. Recommended: Python 3.11+
-        echo Continue anyway? ^(Y/N^)
-        set /p CONTINUE=
-        if /i not "!CONTINUE!"=="Y" exit /b 1
-    )
+    echo    Any Python version accepted (no restrictions)
 )
 echo.
 

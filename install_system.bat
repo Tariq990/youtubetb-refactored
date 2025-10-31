@@ -13,13 +13,14 @@ REM Check Python version
 echo [1/6] Checking Python version...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python not found! Install Python 3.10+ first.
+    echo ERROR: Python not found! Install Python first.
     pause
     exit /b 1
 )
 
 for /f "tokens=2" %%a in ('python --version 2^>^&1') do set PYTHON_VERSION=%%a
 echo    - Python %PYTHON_VERSION% detected
+echo    - Any Python version accepted (no restrictions)
 
 REM Check pip
 echo.

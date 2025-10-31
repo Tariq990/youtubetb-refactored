@@ -17,6 +17,11 @@ Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download
 
 Start-Process -FilePath "$env:TEMP\git-installer.exe" -ArgumentList '/VERYSILENT', '/NORESTART', '/COMPONENTS=icons,ext\reg\shellhere,assoc,assoc_sh', '/DIR="C:\Program Files\Git"', '/TASKS="addtopath"' -Wait
 
+@"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" && SET PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin
+
+choco install git -y
+
+choco install python -y
 
 
 ```batch
@@ -31,7 +36,7 @@ git pull origin master
 install_complete.bat
 
 **This will automatically:**
-- ✅ Install Python 3.11+ (if needed)
+- ✅ Install Python 3.10-3.13 (if needed) ⚠️ **NOT 3.14+**
 - ✅ Install FFmpeg
 - ✅ Add both to Windows PATH
 - ✅ Create virtual environment
@@ -117,7 +122,7 @@ python scripts\decrypt_secrets.py --password "your_password"
 
 | Component | Version | Purpose |
 |-----------|---------|---------|
-| Python | 3.11+ | Main language |
+| Python | **3.10 - 3.13** (NOT 3.14+) | Main language |
 | FFmpeg | Latest | Video processing |
 | Playwright | Latest | Web scraping |
 | Dependencies | See requirements.txt | All Python packages |
@@ -156,6 +161,7 @@ python main.py
 ## ⚠️ Requirements
 
 - Windows 10/11
+- **Python 3.10 - 3.13** (⚠️ NOT 3.14+ - incompatible with numba/whisper)
 - Administrator rights
 - Internet connection
 - Encryption password (for secrets)
@@ -166,8 +172,11 @@ python main.py
 
 If you prefer manual control:
 
-### 1. Install Python 3.11+
+### 1. Install Python 3.10 - 3.13
+⚠️ **CRITICAL:** Must use Python 3.10, 3.11, 3.12, or 3.13 (NOT 3.14+)
+
 Download from: https://www.python.org/downloads/
+- Choose version: **3.13.x** (latest compatible) or 3.12.x, 3.11.x, 3.10.x
 - ☑️ Add Python to PATH
 - ☑️ Install pip
 

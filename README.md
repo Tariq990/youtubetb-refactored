@@ -4,9 +4,11 @@
 
 **نظام احترافي لإنشاء ملخصات كتب فيديو ورفعها على يوتيوب**
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/Python-3.10--3.13-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-2.0.0-orange.svg)](CHANGELOG.md)
+
+> ⚠️ **IMPORTANT:** Requires Python 3.10-3.13 (NOT 3.14+). See [PYTHON_VERSION_FIX.md](docs/PYTHON_VERSION_FIX.md)
 
 </div>
 
