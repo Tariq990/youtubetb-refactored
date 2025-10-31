@@ -288,25 +288,30 @@ def validate_netscape_format(content):
         logging.warning("Missing Netscape header")
         return False, "Missing Netscape header"
     
-    # YouTube cookies check
+    # YouTube/Amazon cookies check
     has_youtube = False
+    has_amazon = False
+    
     for line in content.splitlines():
         if '.youtube.com' in line or '.google.com' in line:
             has_youtube = True
-            break
+        if '.amazon.com' in line:
+            has_amazon = True
+        if has_youtube or has_amazon:
+            break  # Found at least one valid domain
     
-    if not has_youtube:
-        logging.warning("No YouTube/Google cookies found")
-        return False, "No YouTube/Google cookies found"
+    if not has_youtube and not has_amazon:
+        logging.warning("No YouTube/Google/Amazon cookies found")
+        return False, "No YouTube/Google/Amazon cookies found (need at least one)"
     
     # Line count check
     cookie_lines = [l for l in content.splitlines() 
                     if l.strip() and not l.startswith('#')]
-    if len(cookie_lines) < 5:
+    if len(cookie_lines) < 3:  # Relaxed from 5 to 3
         logging.warning(f"Too few cookies: {len(cookie_lines)}")
-        return False, "Too few cookies (< 5)"
+        return False, "Too few cookies (< 3)"
     
-    logging.info(f"Validated Netscape format: {len(cookie_lines)} cookies")
+    logging.info(f"Validated Netscape format: {len(cookie_lines)} cookies (YouTube={has_youtube}, Amazon={has_amazon})")
     return True, None
 
 # ============================================================================
