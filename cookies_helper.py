@@ -315,6 +315,66 @@ def validate_netscape_format(content):
     return True, None
 
 # ============================================================================
+# COOKIE MERGE (ROBUST UNION)
+# ============================================================================
+
+def merge_netscape_cookies(existing_content: str, new_content: str) -> str:
+    """
+    Merge two Netscape-format cookie contents.
+
+    - Prefers values from new_content when the same (domain, path, name) exists
+    - Keeps both YouTube/Google and Amazon cookies together
+    - Deduplicates by (domain, path, name)
+    - Ensures proper Netscape header is present
+
+    Returns:
+        str: merged Netscape cookie text
+    """
+
+    def parse_entries(content: str):
+        entries = {}
+        # Accept only non-comment, non-empty lines with at least 7 tab-separated fields
+        for line in content.splitlines():
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split('\t')
+            if len(parts) < 7:
+                continue
+            domain, flag, path, secure, expiration, name, value = parts[:7]
+            key = (domain.strip(), path.strip(), name.strip())
+            # Keep the entire original line content to avoid reformatting
+            entries[key] = '\t'.join([domain, flag, path, secure, expiration, name, value])
+        return entries
+
+    # Parse both contents
+    existing_map = parse_entries(existing_content or "")
+    new_map = parse_entries(new_content or "")
+
+    # Merge: existing first, then override with new
+    merged = dict(existing_map)
+    merged.update(new_map)
+
+    # Build final content with standard header
+    header = [
+        "# Netscape HTTP Cookie File",
+        "# This is a generated file! Do not edit.",
+        ""
+    ]
+
+    # Keep stable order: new entries first (to prefer recency), then the rest
+    ordered_lines = []
+    # First, include all keys present in new_map preserving their current value
+    for key in new_map.keys():
+        if key in merged:
+            ordered_lines.append(merged[key])
+    # Then, include remaining from existing_map
+    for key in existing_map.keys():
+        if key not in new_map:
+            ordered_lines.append(merged[key])
+
+    return '\n'.join(header + ordered_lines) + '\n'
+
+# ============================================================================
 # API KEY VALIDATION
 # ============================================================================
 
@@ -1077,110 +1137,51 @@ def add_cookies():
         if temp_path.exists():
             temp_path.unlink()
     
-    # Find slot
+    # Find slot (do NOT delete anything yet; we may need to merge first)
     slot = find_empty_cookies_slot()
+    oldest = None
     if not slot:
         print("\n⚠️  All slots full!")
-        print("🗑️  Auto-deleting oldest cookies to make space...")
-        
-        # Find oldest file by modification time
+        print("� Will re-use the oldest slot after merging to preserve both domains...")
         valid_slots = [p for p in COOKIES_PATHS[:4] if p.exists()]
         if not valid_slots:
             print("❌ No existing cookies found!")
             slot = COOKIES_PATHS[0]  # Use first slot
         else:
-            # Sort by modification time (oldest first)
             oldest = min(valid_slots, key=lambda p: p.stat().st_mtime)
-            
-            # Show which file will be deleted
-            age_seconds = time.time() - oldest.stat().st_mtime
-            age_days = age_seconds / 86400
-            size = oldest.stat().st_size
-            
-            print(f"\n📋 Deleting: {oldest.name}")
-            print(f"   • Age: {age_days:.1f} days old")
-            print(f"   • Size: {size:,} bytes")
-            
-            # Create backup before deletion
-            backup_name = f"{oldest.stem}.deleted_{datetime.now():%Y%m%d_%H%M%S}.bak"
-            backup_path = oldest.parent / backup_name
-            
-            try:
-                shutil.copy2(oldest, backup_path)
-                print(f"   • Backup: {backup_name}")
-                logging.info(f"Created backup of old cookies: {backup_path}")
-            except Exception as e:
-                logging.warning(f"Failed to backup old cookies: {e}")
-            
-            # Delete old file
-            oldest.unlink()
-            print(f"   ✅ Deleted old cookies")
-            logging.info(f"Deleted old cookies: {oldest}")
-            
-            slot = oldest  # Use the now-empty slot
+            slot = oldest
     
-    # Smart merge: Check if existing file has Amazon cookies
+    # Smart merge: always try to UNION with existing file to preserve both domains
     print(f"\n💾 Saving to: {slot}...")
-    
-    # Ensure final_content exists before saving
+
     if not final_content:
         print("❌ No content to save")
         return
-    
-    # Check what domains we have in new cookies
-    new_lines = final_content.splitlines()
-    new_youtube = any('youtube.com' in line or 'google.com' in line for line in new_lines if not line.startswith('#'))
-    new_amazon = any('amazon.com' in line for line in new_lines if not line.startswith('#'))
-    
-    # If slot exists, check what it has
+
     merged_content = final_content
-    if slot.exists() and slot.stat().st_size > 100:
-        print("\n🔍 Checking existing cookies...")
-        existing_content = slot.read_text(encoding='utf-8', errors='replace')
-        existing_lines = existing_content.splitlines()
-        
-        existing_youtube = any('youtube.com' in line or 'google.com' in line for line in existing_lines if not line.startswith('#'))
-        existing_amazon = any('amazon.com' in line for line in existing_lines if not line.startswith('#'))
-        
-        print(f"   Existing: YouTube={existing_youtube}, Amazon={existing_amazon}")
-        print(f"   New:      YouTube={new_youtube}, Amazon={new_amazon}")
-        
-        # Smart merge logic
-        should_merge = False
-        if new_youtube and not new_amazon and existing_amazon:
-            print("\n🔄 Detected: New YouTube cookies + Existing Amazon cookies")
-            print("   → Will MERGE to keep both!")
-            should_merge = True
-        elif new_amazon and not new_youtube and existing_youtube:
-            print("\n🔄 Detected: New Amazon cookies + Existing YouTube cookies")
-            print("   → Will MERGE to keep both!")
-            should_merge = True
-        
-        if should_merge:
-            # Extract Amazon cookies from existing
-            amazon_cookies = [line for line in existing_lines 
-                            if 'amazon.com' in line and not line.startswith('#')]
-            
-            # Extract YouTube cookies from existing
-            youtube_cookies = [line for line in existing_lines 
-                             if ('youtube.com' in line or 'google.com' in line) and not line.startswith('#')]
-            
-            # Merge: Keep new cookies + add missing domain from old
-            if new_youtube and existing_amazon:
-                # New has YouTube, keep Amazon from old
-                print(f"   • Keeping {len(amazon_cookies)} Amazon cookies from existing file")
-                merged_lines = new_lines + ['\n'] + amazon_cookies
-            elif new_amazon and existing_youtube:
-                # New has Amazon, keep YouTube from old
-                print(f"   • Keeping {len(youtube_cookies)} YouTube cookies from existing file")
-                merged_lines = youtube_cookies + ['\n'] + new_lines
-            else:
-                merged_lines = new_lines
-            
-            merged_content = '\n'.join(merged_lines)
-            print(f"   ✅ Merged successfully!")
-            print(f"   • Total size: {len(merged_content):,} bytes")
+    existing_content = ""
+    if slot.exists() and slot.stat().st_size > 0:
+        try:
+            existing_content = slot.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            existing_content = ""
+
+    if existing_content:
+        print("\n🔄 Merging with existing cookies (deduplicate + keep newest values)...")
+        merged_content = merge_netscape_cookies(existing_content, final_content)
+        print(f"   ✅ Merge complete. New size: {len(merged_content):,} bytes")
     
+    # If we planned to reuse the oldest file, optionally backup before overwrite
+    if oldest is not None:
+        try:
+            backup_name = f"{oldest.stem}.reused_{datetime.now():%Y%m%d_%H%M%S}.bak"
+            backup_path = oldest.parent / backup_name
+            shutil.copy2(oldest, backup_path)
+            print(f"   • Backup of reused slot: {backup_name}")
+            logging.info(f"Backup created before reuse: {backup_path}")
+        except Exception as e:
+            logging.warning(f"Failed to backup reused slot: {e}")
+
     success, error = save_to_file(slot, merged_content)
     
     if success:
