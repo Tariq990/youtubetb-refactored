@@ -74,6 +74,7 @@ src/database.json
 # Logs
 *.log
 logs/
+cookies_helper.log
 
 # Additional ignore patterns requested by user
 # Prevent accidental commit of database, runs, tmp, pixel/database artifacts and book logs

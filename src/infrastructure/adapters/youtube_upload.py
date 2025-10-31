@@ -426,7 +426,8 @@ def upload_video(
     
     description = meta.get("youtube_description") or ""
 
-    tags: List[str] = meta.get("TAGS") or []
+    # Try both "tags" (lowercase - from youtube_metadata.py) and "TAGS" (uppercase - legacy)
+    tags: List[str] = meta.get("tags") or meta.get("TAGS") or []
 
     # Defensive: ensure tags is a list of strings.
     # Some producers may write TAGS as a single comma-separated string; handle that.

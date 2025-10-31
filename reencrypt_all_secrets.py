@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Re-encrypt all secrets with PBKDF2 format (password: 2552025)
-This fixes the encryption compatibility issue.
+This encrypts ALL files in secrets/ directory.
 """
 
 from pathlib import Path
@@ -19,17 +19,13 @@ PASSWORD = "2552025"
 secrets_dir = repo_root / "secrets"
 encrypted_dir = repo_root / "secrets_encrypted"
 
-# List of files to encrypt
-secret_files = [
-    "api_key.txt",
-    "api_keys.txt",
-    "client_secret.json",
-    "cookies.txt",
-    "token.json",
-    ".env"
-]
+# Get ALL files in secrets/ directory (excluding subdirectories)
+all_files = []
+for item in secrets_dir.iterdir():
+    if item.is_file() and not item.name.startswith('.'):
+        all_files.append(item.name)
 
-existing_files = [f for f in secret_files if (secrets_dir / f).exists()]
+existing_files = sorted(all_files)
 
 if not existing_files:
     print("❌ No secret files found!")

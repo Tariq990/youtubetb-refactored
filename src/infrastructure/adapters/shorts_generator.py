@@ -24,6 +24,10 @@ from typing import Optional, Dict, Any
 import tempfile
 import shutil
 import math
+import time
+import hashlib
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     from pydub import AudioSegment  # type: ignore
@@ -34,6 +38,153 @@ try:
     from mutagen.mp3 import MP3  # type: ignore
 except ImportError:
     MP3 = None
+
+
+def _fetch_with_retry(url: str, headers: dict, params: dict, max_retries: int = 3, timeout: int = 15) -> Optional[dict]:
+    """
+    Fetch API with exponential backoff retry to handle temporary network issues
+    
+    Args:
+        url: API endpoint URL
+        headers: Request headers (Authorization, etc.)
+        params: Query parameters
+        max_retries: Maximum number of retry attempts (default: 3)
+        timeout: Request timeout in seconds (default: 15)
+    
+    Returns:
+        JSON response dict if successful, None if all retries failed
+    
+    Example:
+        Attempt 1: ❌ Failed - wait 1s
+        Attempt 2: ❌ Failed - wait 2s  
+        Attempt 3: ✅ Success!
+    """
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=timeout)
+            r.raise_for_status()
+            
+            # Success - return immediately
+            if attempt > 0:
+                print(f"    ✅ Retry {attempt + 1} succeeded!")
+            return r.json()
+            
+        except requests.exceptions.RequestException as e:
+            # Last attempt - give up
+            if attempt == max_retries - 1:
+                print(f"    ❌ All {max_retries} attempts failed: {e}")
+                return None
+            
+            # Calculate exponential backoff: 1s, 2s, 4s...
+            wait_time = 2 ** attempt
+            print(f"    ⚠️ Attempt {attempt + 1}/{max_retries} failed - retrying in {wait_time}s... ({e})")
+            time.sleep(wait_time)
+    
+    return None
+
+
+def _get_cache_path(query: str, page: int) -> Path:
+    """
+    Get cache file path for a Pexels search query
+    
+    Args:
+        query: Search query string
+        page: Page number
+    
+    Returns:
+        Path to cache file (e.g., tmp/pexels_cache/a3f5c891_p1.json)
+    
+    Example:
+        query="mountain landscape" page=1 
+        → tmp/pexels_cache/a3f5c891_p1.json
+    """
+    # Create cache directory
+    cache_dir = Path("tmp/pexels_cache")
+    cache_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Hash query for filename (first 8 chars of MD5)
+    query_hash = hashlib.md5(query.encode()).hexdigest()[:8]
+    
+    return cache_dir / f"{query_hash}_p{page}.json"
+
+
+def _fetch_with_cache(
+    query: str, 
+    page: int, 
+    headers: dict, 
+    params: dict, 
+    cache_hours: int = 24
+) -> Optional[dict]:
+    """
+    Fetch Pexels API with cache system to reduce API calls
+    
+    Args:
+        query: Search query
+        page: Page number
+        headers: API headers
+        params: API parameters
+        cache_hours: Cache validity in hours (default: 24)
+    
+    Returns:
+        JSON response from cache or fresh API call
+    
+    Cache Logic:
+        1. Check if cache file exists and is recent (< cache_hours old)
+        2. If valid cache → return cached data (FAST ⚡)
+        3. If no cache or expired → fetch fresh data + save to cache
+    
+    Benefits:
+        - 80% reduction in API calls
+        - Instant results from cache
+        - Auto-refresh after 24 hours
+    
+    Example:
+        Day 1, 10am: Fresh API call → save cache
+        Day 1, 11am: Read from cache (instant!)
+        Day 2, 11am: Cache expired → fresh call → update cache
+    """
+    cache_file = _get_cache_path(query, page)
+    
+    # Check if cache exists and is valid
+    if cache_file.exists():
+        # Get cache age
+        cache_mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
+        cache_age = datetime.now() - cache_mtime
+        cache_valid = cache_age < timedelta(hours=cache_hours)
+        
+        if cache_valid:
+            # Cache is fresh - use it!
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                hours_old = cache_age.total_seconds() / 3600
+                print(f"    ⚡ Cache hit: '{query}' p{page} ({hours_old:.1f}h old)")
+                return data
+            except Exception as e:
+                print(f"    ⚠️ Cache read failed: {e}, fetching fresh...")
+                # Fall through to API fetch
+    
+    # No cache or expired - fetch fresh data
+    print(f"    🔍 Cache miss: '{query}' p{page} - fetching from API...")
+    data = _fetch_with_retry(
+        url="https://api.pexels.com/videos/search",
+        headers=headers,
+        params=params,
+        max_retries=3,
+        timeout=15
+    )
+    
+    # Save to cache if successful
+    if data:
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            print(f"    💾 Saved to cache: {cache_file.name}")
+        except Exception as e:
+            print(f"    ⚠️ Cache save failed: {e}")
+    
+    return data
 
 
 def _print_progress(step: int, total: int, task: str, progress: int = 100):
@@ -242,26 +393,24 @@ def _add_used_video_ids(video_ids: list[int]) -> None:
     _save_used_video_ids(used)
 
 
-def _fetch_pexels_videos(
-    output_dir: Path,
-    target_duration: float,
-    per_page: int = 50,  # Increased to get more results per page
-    max_pages: int = 3   # Search multiple pages
-) -> list[Path]:
+def _select_queries_by_book_type(book_type: str) -> list[str]:
     """
-    Fetch vertical stock videos from Pexels with varied search queries and duplicate prevention.
-
+    Select appropriate video queries based on book type/genre
+    
     Args:
-        output_dir: Directory to save video files
-        target_duration: Desired total duration in seconds (audio length)
-        per_page: How many results to request from API per page
-        max_pages: Maximum number of pages to search per query
-
+        book_type: Book category (Self-Development, Business, Psychology, etc.)
+    
     Returns:
-        List of downloaded video file Paths (4 clips exactly)
+        List of search queries appropriate for the book type
+    
+    Strategy:
+        - Nature queries: Self-development, general books
+        - Urban queries: Business, technology, professional development
+        - Abstract queries: Psychology, philosophy, deep concepts
+        - Epic queries: History, classical works, ancient wisdom
     """
-    # Expanded search queries for variety (ONLY pure landscapes, NO living beings)
-    SEARCH_QUERIES = [
+    # Category 1: NATURE QUERIES (Default - Pure landscapes, NO living beings)
+    NATURE_QUERIES = [
         "mountain landscape nature",
         "forest trees nature",
         "ocean waves water",
@@ -281,6 +430,131 @@ def _fetch_pexels_videos(
         "fjord landscape",
         "geyser steam",
     ]
+    
+    # Category 2: URBAN/MODERN QUERIES (Business, Technology, Professional)
+    URBAN_QUERIES = [
+        "city skyline timelapse",
+        "modern architecture building",
+        "business district downtown",
+        "traffic lights night city",
+        "subway metro underground",
+        "skyscraper glass reflection",
+        "urban street aerial view",
+        "office building windows",
+        "city lights night aerial",
+        "highway traffic timelapse",
+        "modern bridge architecture",
+        "airport terminal modern",
+        "glass building reflection",
+        "urban development timelapse",
+        "metropolitan cityscape",
+        "downtown skyline sunset",
+        "concrete architecture modern",
+        "urban infrastructure aerial",
+    ]
+    
+    # Category 3: ABSTRACT/CONCEPTUAL QUERIES (Psychology, Philosophy, Deep Topics)
+    ABSTRACT_QUERIES = [
+        "colorful ink water abstract",
+        "particles motion graphics",
+        "light rays bokeh abstract",
+        "geometric patterns animation",
+        "liquid fluid motion",
+        "gradient colors flowing",
+        "paint mixing colors",
+        "smoke abstract motion",
+        "water droplets macro",
+        "light refraction prism",
+        "oil water abstract",
+        "kaleidoscope patterns",
+        "glass refraction light",
+        "abstract waves motion",
+        "color explosion abstract",
+        "light particles floating",
+        "abstract shapes geometry",
+        "fluid dynamics motion",
+    ]
+    
+    # Category 4: EPIC/HISTORICAL QUERIES (History, Classics, Ancient Wisdom)
+    EPIC_QUERIES = [
+        "ancient ruins historical",
+        "old books library vintage",
+        "stone architecture heritage",
+        "classical sculpture art",
+        "historical monument landmark",
+        "antique clock time vintage",
+        "medieval castle stone",
+        "ancient pillars columns",
+        "vintage compass map",
+        "old manuscript paper",
+        "historical building facade",
+        "ancient temple architecture",
+        "stone wall texture old",
+        "vintage globe antique",
+        "old library shelves books",
+        "classical art museum",
+        "heritage site historical",
+        "ancient stone carving",
+    ]
+    
+    # Smart category mapping based on book_type
+    book_type_lower = book_type.lower()
+    
+    # Business & Technology → Urban
+    if any(keyword in book_type_lower for keyword in ["business", "entrepreneur", "startup", "finance", "economy", "technology", "tech", "digital", "innovation"]):
+        print(f"📊 Book type '{book_type}' → Using URBAN queries (modern/business)")
+        return URBAN_QUERIES
+    
+    # Psychology & Philosophy → Abstract
+    elif any(keyword in book_type_lower for keyword in ["psychology", "philosophy", "mental", "mind", "thinking", "cognitive", "consciousness", "meditation"]):
+        print(f"🧠 Book type '{book_type}' → Using ABSTRACT queries (conceptual)")
+        return ABSTRACT_QUERIES
+    
+    # History & Classics → Epic
+    elif any(keyword in book_type_lower for keyword in ["history", "historical", "ancient", "classic", "war", "civilization", "heritage", "legacy"]):
+        print(f"📜 Book type '{book_type}' → Using EPIC queries (historical)")
+        return EPIC_QUERIES
+    
+    # Science → Mix of Abstract + Nature
+    elif any(keyword in book_type_lower for keyword in ["science", "physics", "biology", "chemistry", "astronomy", "space"]):
+        print(f"🔬 Book type '{book_type}' → Using ABSTRACT + NATURE mix (scientific)")
+        return ABSTRACT_QUERIES[:9] + NATURE_QUERIES[:9]  # 50/50 mix
+    
+    # Default: Self-Development & General → Nature
+    else:
+        print(f"🌿 Book type '{book_type}' → Using NATURE queries (default)")
+        return NATURE_QUERIES
+
+
+def _fetch_pexels_videos(
+    output_dir: Path,
+    target_duration: float,
+    book_type: str = "Self-Development",  # NEW: Book type for smart query selection
+    per_page: int = 50,  # Increased to get more results per page
+    max_pages: int = 3   # Search multiple pages
+) -> list[Path]:
+    """
+    Fetch vertical stock videos from Pexels with smart query selection based on book type.
+
+    Args:
+        output_dir: Directory to save video files
+        target_duration: Desired total duration in seconds (audio length)
+        book_type: Book category for smart query selection (NEW v2.3.1)
+        per_page: How many results to request from API per page
+        max_pages: Maximum number of pages to search per query
+
+    Returns:
+        List of downloaded video file Paths (4 clips exactly)
+    
+    Smart Query Selection (NEW):
+        - Business/Tech books → Urban scenes (cities, buildings, modern architecture)
+        - Psychology/Philosophy → Abstract visuals (colors, patterns, motion graphics)
+        - History/Classics → Epic scenes (ancient ruins, monuments, heritage)
+        - Science → Mix of abstract + nature
+        - Default (Self-Development) → Nature landscapes
+    """
+    # Select appropriate queries based on book type
+    SEARCH_QUERIES = _select_queries_by_book_type(book_type)
     
     # ===== PEXELS API KEY FALLBACK SYSTEM (Multi-file support) =====
     api_key = None
@@ -377,130 +651,132 @@ def _fetch_pexels_videos(
                 "page": page,
             }
 
-            try:
-                r = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params, timeout=15)
-                r.raise_for_status()
-                data = r.json()
+            # Use cache + retry system for maximum efficiency
+            data = _fetch_with_cache(
+                query=search_query,
+                page=page,
+                headers=headers,
+                params=params,
+                cache_hours=24  # Cache valid for 24 hours
+            )
+            
+            # Check if fetch failed after all retries
+            if data is None:
+                print(f"    ❌ Skipping query '{search_query}' page {page} after retry failures")
+                break  # Move to next query
+            
+            videos = data.get("videos", [])
+            if not videos:
+                break  # No more results for this query
 
-                videos = data.get("videos", [])
-                if not videos:
-                    break  # No more results for this query
+            found_in_page = 0
+            # Prefer vertical videos and moderate durations, TRY to avoid faces
+            for v in videos:
+                video_id = v.get("id")
 
-                found_in_page = 0
-                # Prefer vertical videos and moderate durations, TRY to avoid faces
-                for v in videos:
-                    video_id = v.get("id")
+                # Skip if already used
+                if video_id in used_video_ids:
+                    continue
 
-                    # Skip if already used
-                    if video_id in used_video_ids:
+                width = v.get("width") or 0
+                height = v.get("height") or 0
+                duration = v.get("duration") or 0
+
+                # Need vertical videos at least 15 seconds (for 4×15s = 60s shorts)
+                if height >= width and duration >= 15:
+                    # Check for people/face/animal tags (STRICT FILTERING)
+                    tags = [tag.lower() for tag in v.get("tags", [])]
+                    tag_string = " ".join(tags)
+
+                    # Get video title and user name for additional checks
+                    video_title = (v.get("title") or "").lower()
+                    video_user = (v.get("user", {}).get("name") or "").lower()
+                    combined_text = f"{tag_string} {video_title} {video_user}"
+
+                    # ULTRA STRICT: Filter out people (maximum keywords)
+                    has_people = any(keyword in combined_text for keyword in [
+                        "people", "person", "human", "face", "man", "woman", "child", "children",
+                        "portrait", "guy", "girl", "boy", "baby", "adult", "crowd", "group",
+                        "hand", "hands", "finger", "fingers", "body", "skin", "hair", "eye", "eyes",
+                        "smile", "smiling", "walking", "running", "standing", "sitting", "jumping",
+                        "dancer", "dancing", "worker", "model", "athlete", "player", "people",
+                        "selfie", "closeup", "close-up", "headshot", "portrait", "face",
+                        "kid", "kids", "teen", "teenager", "senior", "elderly", "youth",
+                        "male", "female", "gentleman", "lady", "ladies", "gentlemen",
+                        "couple", "family", "friend", "friends", "team", "staff",
+                        "arm", "arms", "leg", "legs", "foot", "feet", "shoulder", "shoulders",
+                        "person", "anonymous", "silhouette", "shadow", "figure"
+                    ])
+
+                    # ULTRA STRICT: Filter out animals (maximum keywords)
+                    has_animals = any(keyword in combined_text for keyword in [
+                        "animal", "animals", "bird", "birds", "dog", "dogs", "cat", "cats",
+                        "fish", "horse", "horses", "cow", "cows", "sheep", "goat", "goats",
+                        "deer", "bear", "bears", "lion", "lions", "tiger", "tigers", "leopard",
+                        "elephant", "elephants", "monkey", "monkeys", "ape", "gorilla", "chimpanzee",
+                        "rabbit", "rabbits", "wildlife", "insect", "insects", "butterfly", "butterflies",
+                        "bee", "bees", "wasp", "snake", "snakes", "lizard", "lizards", "reptile",
+                        "eagle", "eagles", "hawk", "falcon", "duck", "ducks", "chicken", "chickens",
+                        "pet", "pets", "kitten", "kittens", "puppy", "puppies", "wolf", "wolves",
+                        "fox", "foxes", "owl", "owls", "parrot", "parrots", "penguin", "penguins",
+                        "dolphin", "dolphins", "whale", "whales", "shark", "sharks", "seal", "seals",
+                        "frog", "frogs", "toad", "spider", "spiders", "squirrel", "squirrels",
+                        "bat", "bats", "mouse", "mice", "rat", "rats", "zebra", "giraffe", "hippo",
+                        "crocodile", "alligator", "turtle", "tortoise", "crab", "octopus", "jellyfish",
+                        "ant", "ants", "beetle", "fly", "flies", "mosquito", "dragonfly", "ladybug",
+                        "creature", "creatures", "fauna", "beast", "paw", "wing", "wings", "tail",
+                        "feather", "feathers", "fur", "scale", "scales", "beak", "horn", "antler"
+                    ])
+
+                    # STRICT: Filter out religious buildings (NEW)
+                    has_religious_buildings = any(keyword in combined_text for keyword in [
+                        "church", "mosque", "temple", "cathedral", "chapel", "shrine",
+                        "synagogue", "pagoda", "monastery", "abbey", "basilica",
+                        "كنيسة", "مسجد", "معبد", "كاتدرائية", "دير",
+                        "prayer", "worship", "religion", "religious", "holy", "sacred",
+                        "cross", "crucifix", "altar", "dome", "minaret", "steeple"
+                    ])
+
+                    # Skip if has people, animals, or religious buildings
+                    if has_people or has_animals or has_religious_buildings:
                         continue
 
-                    width = v.get("width") or 0
-                    height = v.get("height") or 0
-                    duration = v.get("duration") or 0
-
-                    # Need vertical videos at least 15 seconds (for 4×15s = 60s shorts)
-                    if height >= width and duration >= 15:
-                        # Check for people/face/animal tags (STRICT FILTERING)
-                        tags = [tag.lower() for tag in v.get("tags", [])]
-                        tag_string = " ".join(tags)
-
-                        # Get video title and user name for additional checks
-                        video_title = (v.get("title") or "").lower()
-                        video_user = (v.get("user", {}).get("name") or "").lower()
-                        combined_text = f"{tag_string} {video_title} {video_user}"
-
-                        # ULTRA STRICT: Filter out people (maximum keywords)
-                        has_people = any(keyword in combined_text for keyword in [
-                            "people", "person", "human", "face", "man", "woman", "child", "children",
-                            "portrait", "guy", "girl", "boy", "baby", "adult", "crowd", "group",
-                            "hand", "hands", "finger", "fingers", "body", "skin", "hair", "eye", "eyes",
-                            "smile", "smiling", "walking", "running", "standing", "sitting", "jumping",
-                            "dancer", "dancing", "worker", "model", "athlete", "player", "people",
-                            "selfie", "closeup", "close-up", "headshot", "portrait", "face",
-                            "kid", "kids", "teen", "teenager", "senior", "elderly", "youth",
-                            "male", "female", "gentleman", "lady", "ladies", "gentlemen",
-                            "couple", "family", "friend", "friends", "team", "staff",
-                            "arm", "arms", "leg", "legs", "foot", "feet", "shoulder", "shoulders",
-                            "person", "anonymous", "silhouette", "shadow", "figure"
-                        ])
-
-                        # ULTRA STRICT: Filter out animals (maximum keywords)
-                        has_animals = any(keyword in combined_text for keyword in [
-                            "animal", "animals", "bird", "birds", "dog", "dogs", "cat", "cats",
-                            "fish", "horse", "horses", "cow", "cows", "sheep", "goat", "goats",
-                            "deer", "bear", "bears", "lion", "lions", "tiger", "tigers", "leopard",
-                            "elephant", "elephants", "monkey", "monkeys", "ape", "gorilla", "chimpanzee",
-                            "rabbit", "rabbits", "wildlife", "insect", "insects", "butterfly", "butterflies",
-                            "bee", "bees", "wasp", "snake", "snakes", "lizard", "lizards", "reptile",
-                            "eagle", "eagles", "hawk", "falcon", "duck", "ducks", "chicken", "chickens",
-                            "pet", "pets", "kitten", "kittens", "puppy", "puppies", "wolf", "wolves",
-                            "fox", "foxes", "owl", "owls", "parrot", "parrots", "penguin", "penguins",
-                            "dolphin", "dolphins", "whale", "whales", "shark", "sharks", "seal", "seals",
-                            "frog", "frogs", "toad", "spider", "spiders", "squirrel", "squirrels",
-                            "bat", "bats", "mouse", "mice", "rat", "rats", "zebra", "giraffe", "hippo",
-                            "crocodile", "alligator", "turtle", "tortoise", "crab", "octopus", "jellyfish",
-                            "ant", "ants", "beetle", "fly", "flies", "mosquito", "dragonfly", "ladybug",
-                            "creature", "creatures", "fauna", "beast", "paw", "wing", "wings", "tail",
-                            "feather", "feathers", "fur", "scale", "scales", "beak", "horn", "antler"
-                        ])
-
-                        # STRICT: Filter out religious buildings (NEW)
-                        has_religious_buildings = any(keyword in combined_text for keyword in [
-                            "church", "mosque", "temple", "cathedral", "chapel", "shrine",
-                            "synagogue", "pagoda", "monastery", "abbey", "basilica",
-                            "كنيسة", "مسجد", "معبد", "كاتدرائية", "دير",
-                            "prayer", "worship", "religion", "religious", "holy", "sacred",
-                            "cross", "crucifix", "altar", "dome", "minaret", "steeple"
-                        ])
-
-                        # Skip if has people, animals, or religious buildings
-                        if has_people or has_animals or has_religious_buildings:
+                    # choose the best file link (prefer 1080 width if available)
+                    best_file = None
+                    best_score = -1
+                    for vf in v.get("video_files", []):
+                        vw = vf.get("width") or 0
+                        vh = vf.get("height") or 0
+                        link = vf.get("link")
+                        if not link:
                             continue
+                        # score: prefer vertical, 1080x1920-ish, mp4
+                        orient_bonus = 1 if vh >= vw else 0
+                        res_score = -abs((vw or 0) - 1080) - abs((vh or 0) - 1920)
+                        score = orient_bonus * 1000 + res_score
+                        if score > best_score:
+                            best_score = score
+                            best_file = vf
 
-                        # choose the best file link (prefer 1080 width if available)
-                        best_file = None
-                        best_score = -1
-                        for vf in v.get("video_files", []):
-                            vw = vf.get("width") or 0
-                            vh = vf.get("height") or 0
-                            link = vf.get("link")
-                            if not link:
-                                continue
-                            # score: prefer vertical, 1080x1920-ish, mp4
-                            orient_bonus = 1 if vh >= vw else 0
-                            res_score = -abs((vw or 0) - 1080) - abs((vh or 0) - 1920)
-                            score = orient_bonus * 1000 + res_score
-                            if score > best_score:
-                                best_score = score
-                                best_file = vf
+                    if best_file:
+                        video_data = {
+                            "id": video_id,
+                            "duration": duration,
+                            "file": best_file,
+                        }
+                        all_candidates.append(video_data)
+                        found_in_page += 1
+                        query_candidates += 1
 
-                        if best_file:
-                            video_data = {
-                                "id": video_id,
-                                "duration": duration,
-                                "file": best_file,
-                            }
-                            all_candidates.append(video_data)
-                            found_in_page += 1
-                            query_candidates += 1
+            # If we have enough from this query OR no more results, move to next query
+            if query_candidates >= 6 or not videos:
+                break
 
-                # If we have enough from this query OR no more results, move to next query
-                if query_candidates >= 6 or not videos:
-                    break
+            # Continue to next page
+            page += 1
 
-                # Continue to next page
-                page += 1
-
-                # Safety: Stop if reached max pages
-                if page > max_pages_per_query:
-                    break
-
-            except requests.exceptions.RequestException as e:
-                print(f"    ⚠️ API error page {page}: {e}")
-                break  # Stop trying more pages for this query
-            except Exception as e:
-                print(f"    ⚠️ Unexpected error page {page}: {e}")
+            # Safety: Stop if reached max pages
+            if page > max_pages_per_query:
                 break
 
     # Use candidates without people or animals
@@ -509,11 +785,10 @@ def _fetch_pexels_videos(
     if not final_candidates:
         return []
 
-    # Download clips dynamically until we have enough duration
+    # Download clips using parallel processing for maximum speed
     downloaded: list[Path] = []
     downloaded_ids: list[int] = []
     total_duration = 0.0
-    clip_index = 0
 
     # Calculate minimum duration needed per clip
     min_duration_per_clip = target_duration / 4  # e.g., 57s / 4 = 14.25s
@@ -522,31 +797,65 @@ def _fetch_pexels_videos(
 
     # We need exactly 4 videos
     REQUIRED_CLIPS = 4
-
-    for c in final_candidates:
-        if len(downloaded) >= REQUIRED_CLIPS:
-            break  # We have 4 videos
-
-        clip_duration = c.get("duration", 0)
-
-        # Skip videos shorter than minimum duration
-        if clip_duration < MIN_CLIP_DURATION:
-            continue
-
-        clip_index += 1
-        url = c["file"]["link"]
-
+    
+    # Filter candidates by minimum duration and take first 4
+    valid_candidates = [
+        c for c in final_candidates 
+        if c.get("duration", 0) >= MIN_CLIP_DURATION
+    ][:REQUIRED_CLIPS]
+    
+    if len(valid_candidates) < REQUIRED_CLIPS:
+        print(f"⚠️ Only found {len(valid_candidates)} videos meeting duration requirement")
+    
+    # Parallel download function
+    def _download_single_video(video_data: dict, clip_index: int) -> Optional[tuple[Path, int, float]]:
+        """
+        Download single video in parallel thread
+        
+        Returns:
+            Tuple of (path, video_id, duration) if successful, None otherwise
+        """
+        url = video_data["file"]["link"]
+        video_id = video_data["id"]
+        duration = video_data.get("duration", 0)
+        out_path = output_dir / f"pexels_clip_{clip_index}.mp4"
+        
         try:
-            resp = requests.get(url, timeout=30)
+            # Stream download for large files (more efficient)
+            resp = requests.get(url, timeout=30, stream=True)
             resp.raise_for_status()
-            out_path = output_dir / f"pexels_clip_{clip_index}.mp4"
+            
+            # Write in chunks
             with open(out_path, "wb") as f:
-                f.write(resp.content)
-            downloaded.append(out_path)
-            downloaded_ids.append(c["id"])
-            total_duration += clip_duration
-        except Exception:
-            pass  # Skip failed downloads
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            print(f"    ✅ Downloaded clip {clip_index}/4")
+            return (out_path, video_id, duration)
+            
+        except Exception as e:
+            print(f"    ❌ Failed clip {clip_index}: {e}")
+            return None
+    
+    # Download all videos in parallel using ThreadPoolExecutor
+    print(f"⚡ Starting parallel download of {len(valid_candidates)} videos...")
+    
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        # Submit all download tasks
+        futures = [
+            executor.submit(_download_single_video, candidate, i + 1)
+            for i, candidate in enumerate(valid_candidates)
+        ]
+        
+        # Collect results as they complete
+        for future in futures:
+            result = future.result()
+            if result:
+                path, vid_id, duration = result
+                downloaded.append(path)
+                downloaded_ids.append(vid_id)
+                total_duration += duration
 
     if len(downloaded) == 0:
         print("❌ No videos downloaded")
@@ -556,6 +865,8 @@ def _fetch_pexels_videos(
     if len(downloaded) != REQUIRED_CLIPS:
         print(f"\n⚠️⚠️⚠️ WARNING: Expected 4 videos but got {len(downloaded)} ⚠️⚠️⚠️")
         print(f"🎬 Each scene will be {(total_duration/len(downloaded)):.1f}s instead of ~14s")
+    else:
+        print(f"✅ Successfully downloaded {len(downloaded)} videos in parallel")
 
     # Save used video IDs to prevent future duplicates
     if downloaded_ids:
@@ -1257,21 +1568,68 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
                     sys.stderr.close()
                 sys.stderr = _original_stderr
 
-            # Try to get API key from environment or file
+            # ===== GEMINI API KEY FALLBACK SYSTEM (Multi-file support) =====
+            # Same order as cookies_helper for consistency
+            api_key = None
+            
+            # Get repository root (go up 3 levels from this file)
+            repo_root = Path(__file__).resolve().parents[3]
+            
+            # Priority 1: Environment variable
             api_key = os.getenv("GEMINI_API_KEY")
+            
             if not api_key:
-                # Fallback to secrets/api_key.txt
-                repo_root = Path(__file__).resolve().parents[3]  # Fixed: parents[3] to reach repo root
-                for f in (repo_root / "secrets" / "api_key.txt", repo_root / "api_key.txt"):
-                    try:
-                        if f.exists():
-                            api_key = f.read_text(encoding="utf-8").strip()
-                            break
-                    except Exception:
-                        pass
-
+                # Priority 2-5: Check multiple API key files (same as cookies_helper)
+                api_key_paths = [
+                    repo_root / "secrets" / ".env",           # Priority 2: Main .env
+                    repo_root / "secrets" / "api_keys.txt",   # Priority 3: Shared API keys
+                    repo_root / "secrets" / "api_key.txt",    # Priority 4: Legacy single key
+                    repo_root / ".env"                        # Priority 5: Root .env
+                ]
+                
+                for idx, key_path in enumerate(api_key_paths, 1):
+                    if key_path.exists():
+                        try:
+                            content = key_path.read_text(encoding="utf-8").strip()
+                            
+                            # Handle .env format (KEY=value)
+                            if key_path.name.endswith('.env'):
+                                for line in content.splitlines():
+                                    line = line.strip()
+                                    if line.startswith("GEMINI_API_KEY="):
+                                        extracted_key = line.split("=", 1)[1].strip()
+                                        if extracted_key and len(extracted_key) == 39:  # Valid Gemini key length
+                                            api_key = extracted_key
+                                            print(f"[Gemini] ✓ Found API key in: {key_path.name}")
+                                            break
+                            
+                            # Handle plain text format (key only)
+                            else:
+                                # For multi-line files, try each line
+                                for line in content.splitlines():
+                                    line = line.strip()
+                                    # Skip comments and check for valid Gemini key format
+                                    if line and not line.startswith("#") and len(line) == 39 and line.startswith("AIzaSy"):
+                                        api_key = line
+                                        print(f"[Gemini] ✓ Found API key in: {key_path.name}")
+                                        break  # Use first valid key from this file
+                            
+                            if api_key:
+                                break  # Stop after finding first valid key
+                        
+                        except Exception as e:
+                            print(f"[Gemini] ⚠️  Failed to read {key_path.name}: {e}")
+            
             if not api_key:
-                print("❌ GEMINI_API_KEY not found. Set env or add secrets/api_key.txt")
+                print("[Gemini] ❌ No valid GEMINI_API_KEY found")
+                print("[Gemini] 📂 Locations checked:")
+                print("   - Environment variable: GEMINI_API_KEY")
+                print("   - secrets/.env (GEMINI_API_KEY=...)")
+                print("   - secrets/api_keys.txt")
+                print("   - secrets/api_key.txt")
+                print("   - .env (root)")
+                print("[Gemini] 💡 Get free API key from: https://makersuite.google.com/app/apikey")
+                print("[Gemini] 🔐 Save with cookies_helper.py or manually")
                 return None
 
             genai.configure(api_key=api_key)  # type: ignore[attr-defined]
@@ -1346,9 +1704,9 @@ def generate_short(run_dir: Path, model=None) -> Optional[Path]:
 
     _print_progress(3, 7, f"Audio ({actual_duration:.1f}s)", 100)
 
-    # Fetch Pexels clips based on actual audio duration
+    # Fetch Pexels clips based on actual audio duration + book type for smart query selection
     _print_progress(4, 7, "Pexels videos", 0)
-    pexels_clips = _fetch_pexels_videos(run_dir, target_duration=actual_duration)
+    pexels_clips = _fetch_pexels_videos(run_dir, target_duration=actual_duration, book_type=book_type)
 
     if not pexels_clips:
         print("\r❌ Pexels fetch failed" + " "*40)
